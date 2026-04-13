@@ -351,16 +351,18 @@ export default function ProfileScreen({ navigation }) {
         <View style={styles.topSection}>
           {/* Top nav */}
           <View style={styles.topNav}>
-            <TouchableOpacity
-              style={styles.navBtn}
-              onPress={() => navigation.goBack()}
-            >
-              <MaterialCommunityIcons
-                name="arrow-left"
-                size={20}
-                color={Colors.ink700}
-              />
-            </TouchableOpacity>
+            <View style={styles.navLeft}>
+              <TouchableOpacity
+                style={styles.navBtn}
+                onPress={() => navigation.goBack()}
+              >
+                <MaterialCommunityIcons
+                  name="arrow-left"
+                  size={20}
+                  color={Colors.ink700}
+                />
+              </TouchableOpacity>
+            </View>
             <Text style={styles.navTitle}>My Profile</Text>
             <View style={styles.navRight}>
               <TouchableOpacity
@@ -528,7 +530,13 @@ const styles = StyleSheet.create({
     color: Colors.ink700,
     letterSpacing: 0.3,
   },
-  navRight: { flexDirection: "row", gap: 8 },
+  navRight: {
+    flexDirection: "row",
+    gap: 8,
+    minWidth: 88,
+    justifyContent: "flex-end",
+  },
+  navLeft: { flexDirection: "row", minWidth: 88 },
   navBtn: {
     width: 40,
     height: 40,

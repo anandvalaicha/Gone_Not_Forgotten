@@ -14,9 +14,11 @@ import {
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { isFirebaseConfigured } from "../config/firebase";
 import { memorialService, authService, storageService } from "../services";
 import { Colors } from "../theme/colors";
+import AppLogo from "../components/AppLogo";
 
 const DEMO_MEMORIALS = [
   {
@@ -359,83 +361,6 @@ export default function HomeScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.welcomeLabel}>Welcome back</Text>
-          <Text style={styles.welcomeName} numberOfLines={1}>
-            {displayName}
-          </Text>
-        </View>
-        <View style={styles.avatarCircle}>
-          <Text style={styles.avatarText}>
-            {displayName[0]?.toUpperCase() || "U"}
-          </Text>
-        </View>
-      </View>
-
-      {/* Action Grid */}
-      <View style={styles.actionGrid}>
-        <TouchableOpacity
-          style={[styles.actionBtn, styles.actionBtnPrimary]}
-          onPress={() => setShowCreateModal(true)}
-        >
-          <Text style={styles.actionIconPrimary}>+</Text>
-          <Text style={styles.actionLabelPrimary}>Add memory</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.actionBtn, styles.actionBtnSecondary]}
-          onPress={() => navigation.navigate("Profile")}
-        >
-          <Text style={styles.actionIcon}>◉</Text>
-          <Text style={styles.actionLabel}>Your profile</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.actionBtn, styles.actionBtnSecondary]}
-          onPress={() => navigation.navigate("ScanQR")}
-        >
-          <Text style={styles.actionIcon}>⊡</Text>
-          <Text style={styles.actionLabel}>Scan QR</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.actionBtn, styles.actionBtnSecondary]}
-          onPress={() => navigation.navigate("GenerateQR")}
-        >
-          <Text style={styles.actionIcon}>◈</Text>
-          <Text style={styles.actionLabel}>Generate QR</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Memories section header */}
-      <View style={styles.sectionRow}>
-        <Text style={styles.sectionTitle}>Your Memories</Text>
-        <TouchableOpacity
-          onPress={() => setSortBy(sortBy === "newest" ? "oldest" : "newest")}
-        >
-          <Text style={styles.filterIcon}>
-            {sortBy === "newest" ? "↓" : "↑"}
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Search bar */}
-      <View style={styles.searchBar}>
-        <Text style={styles.searchIcon}>⌕</Text>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search"
-          placeholderTextColor={Colors.ink300}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          autoCapitalize="none"
-          autoCorrect={false}
-          underlineColorAndroid="transparent"
-          selectionColor={Colors.green700}
-          caretColor={Colors.green700}
-          keyboardAppearance="light"
-        />
-      </View>
-
       {/* Feed */}
       {loading && memorials.length === 0 ? (
         <ActivityIndicator
@@ -450,6 +375,89 @@ export default function HomeScreen({ navigation }) {
           renderItem={renderMemoryCard}
           contentContainerStyle={styles.feedList}
           showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            <>
+              {/* Header */}
+              <View style={styles.header}>
+                <AppLogo size={36} />
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={styles.welcomeLabel}>Welcome back</Text>
+                  <Text style={styles.welcomeName} numberOfLines={1}>
+                    {displayName}
+                  </Text>
+                </View>
+                <View style={styles.avatarCircle}>
+                  <Text style={styles.avatarText}>
+                    {displayName[0]?.toUpperCase() || "U"}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Action Grid */}
+              <View style={styles.actionGrid}>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.actionBtnPrimary]}
+                  onPress={() => setShowCreateModal(true)}
+                >
+                  <Text style={styles.actionIconPrimary}>+</Text>
+                  <Text style={styles.actionLabelPrimary}>Add memory</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.actionBtnSecondary]}
+                  onPress={() => navigation.navigate("Profile")}
+                >
+                  <Text style={styles.actionIcon}>◉</Text>
+                  <Text style={styles.actionLabel}>Your profile</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.actionBtnSecondary]}
+                  onPress={() => navigation.navigate("ScanQR")}
+                >
+                  <Text style={styles.actionIcon}>⊡</Text>
+                  <Text style={styles.actionLabel}>Scan QR</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.actionBtnSecondary]}
+                  onPress={() => navigation.navigate("GenerateQR")}
+                >
+                  <Text style={styles.actionIcon}>◈</Text>
+                  <Text style={styles.actionLabel}>Generate QR</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Memories section header */}
+              <View style={styles.sectionRow}>
+                <Text style={styles.sectionTitle}>Your Memories</Text>
+                <TouchableOpacity
+                  onPress={() =>
+                    setSortBy(sortBy === "newest" ? "oldest" : "newest")
+                  }
+                >
+                  <Text style={styles.filterIcon}>
+                    {sortBy === "newest" ? "↓" : "↑"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Search bar */}
+              <View style={styles.searchBar}>
+                <Text style={styles.searchIcon}>⌕</Text>
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search"
+                  placeholderTextColor={Colors.ink300}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  underlineColorAndroid="transparent"
+                  selectionColor={Colors.green700}
+                  caretColor={Colors.green700}
+                  keyboardAppearance="light"
+                />
+              </View>
+            </>
+          }
           ListEmptyComponent={
             <View style={styles.emptyCard}>
               <Text style={styles.emptyTitle}>No memories yet</Text>
@@ -460,6 +468,15 @@ export default function HomeScreen({ navigation }) {
           }
         />
       )}
+
+      {/* Floating Action Button */}
+      <TouchableOpacity
+        style={styles.fab}
+        activeOpacity={0.85}
+        onPress={() => setShowCreateModal(true)}
+      >
+        <MaterialCommunityIcons name="plus" size={28} color="#fff" />
+      </TouchableOpacity>
 
       {/* Create Memory Modal */}
       <Modal
@@ -987,5 +1004,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.ink700,
     marginRight: 10,
+  },
+  fab: {
+    position: "absolute",
+    bottom: 28,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: Colors.green500,
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    zIndex: 20,
   },
 });

@@ -14,6 +14,7 @@ import EditProfileScreen from './src/screens/EditProfileScreen';
 import MemorialDetailScreen from './src/screens/MemorialDetailScreen';
 import SignInScreen from './src/screens/SignInScreen';
 import SignUpScreen from './src/screens/SignUpScreen';
+import SplashScreen from './src/screens/SplashScreen';
 import { authService } from './src/services';
 
 const Stack = createNativeStackNavigator();
@@ -21,6 +22,7 @@ const Stack = createNativeStackNavigator();
 export default function App() {
   const [user, setUser] = useState(null);
   const [initializing, setInitializing] = useState(true);
+  const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
     const unregister = authService.onAuthStateChange((currentUser) => {
@@ -37,6 +39,10 @@ export default function App() {
         <Text style={styles.loadingText}>Loading...</Text>
       </View>
     );
+  }
+
+  if (showSplash && !user) {
+    return <SplashScreen onFinish={() => setShowSplash(false)} />;
   }
 
   return (

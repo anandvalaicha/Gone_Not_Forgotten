@@ -10,6 +10,7 @@ import {
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { authService } from "../services";
 import { Colors } from "../theme/colors";
+import AppLogo from "../components/AppLogo";
 
 export default function EditProfileScreen({ navigation, route }) {
   const { currentName = "", currentBio = "" } = route.params || {};
@@ -49,7 +50,8 @@ export default function EditProfileScreen({ navigation, route }) {
             color={Colors.ink700}
           />
         </TouchableOpacity>
-        <Text style={styles.title}>Edit Profile</Text>
+        <AppLogo size={32} />
+        <Text style={[styles.title, { marginLeft: 8 }]}>Edit Profile</Text>
       </View>
 
       <View style={styles.form}>

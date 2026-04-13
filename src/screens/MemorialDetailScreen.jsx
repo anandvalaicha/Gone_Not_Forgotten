@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { memorialService } from "../services";
 import { Colors } from "../theme/colors";
+import AppLogo from "../components/AppLogo";
 
 const TABS = ["Memories", "Gallery", "Audio"];
 
@@ -69,7 +70,9 @@ export default function MemorialDetailScreen({ route, navigation }) {
                     ))}
                   </View>
                 )}
-                <Text style={styles.postDescription}>{memorial.description}</Text>
+                <Text style={styles.postDescription}>
+                  {memorial.description}
+                </Text>
               </View>
             ) : (
               <Text style={styles.empty}>No memories added yet.</Text>
@@ -82,7 +85,11 @@ export default function MemorialDetailScreen({ route, navigation }) {
             {memorial.photos?.length > 0 ? (
               <View style={styles.galleryGrid}>
                 {memorial.photos.map((uri, idx) => (
-                  <Image key={idx} source={{ uri }} style={styles.galleryPhoto} />
+                  <Image
+                    key={idx}
+                    source={{ uri }}
+                    style={styles.galleryPhoto}
+                  />
                 ))}
               </View>
             ) : (
@@ -135,6 +142,8 @@ export default function MemorialDetailScreen({ route, navigation }) {
         >
           <Text style={styles.navBtnText}>←</Text>
         </TouchableOpacity>
+        <AppLogo size={32} />
+        <View style={{ flex: 1 }} />
         <View style={styles.navRight}>
           <TouchableOpacity style={styles.navBtn}>
             <Text style={styles.navBtnText}>⊞</Text>
