@@ -60,13 +60,15 @@ function getOrdinal(n) {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
-export default function ProfileScreen({ navigation }) {
+export default function ProfileScreen({ navigation, route }) {
   const user = authService.getCurrentUser();
   const displayName =
     user?.displayName ||
     user?.email?.split("@")[0]?.replace(/[._]/g, " ") ||
     "User";
   const [profileName, setProfileName] = useState(displayName);
+  const [birthYear, setBirthYear] = useState("");
+  const [deathYear, setDeathYear] = useState("");
   const [bio, setBio] = useState(
     "Artist, educator, and devoted mother—painting life's canvas with love and color.",
   );
@@ -81,6 +83,20 @@ export default function ProfileScreen({ navigation }) {
   useEffect(() => {
     setProfileName(displayName);
   }, [displayName]);
+
+  useEffect(() => {
+    if (route.params?.updatedName) setProfileName(route.params.updatedName);
+    if (route.params?.updatedBio) setBio(route.params.updatedBio);
+    if (route.params?.updatedBirthYear !== undefined)
+      setBirthYear(route.params.updatedBirthYear);
+    if (route.params?.updatedDeathYear !== undefined)
+      setDeathYear(route.params.updatedDeathYear);
+  }, [
+    route.params?.updatedName,
+    route.params?.updatedBio,
+    route.params?.updatedBirthYear,
+    route.params?.updatedDeathYear,
+  ]);
 
   useEffect(() => {
     if (!isFirebaseConfigured) return;
@@ -308,6 +324,8 @@ export default function ProfileScreen({ navigation }) {
               navigation.navigate("EditProfile", {
                 currentName: profileName,
                 currentBio: bio,
+                currentBirthYear: birthYear,
+                currentDeathYear: deathYear,
               });
             }}
           >
@@ -429,14 +447,14 @@ export default function ProfileScreen({ navigation }) {
           {/* Name */}
           <Text style={styles.name}>{profileName}</Text>
 
-          {/* Decorative dot row */}
-          <View style={styles.dotRow}>
-            <View style={[styles.dot, styles.dotSmall]} />
-            <View style={styles.dot} />
-            <View style={[styles.dot, styles.dotGreen]} />
-            <View style={styles.dot} />
-            <View style={[styles.dot, styles.dotSmall]} />
-          </View>
+          {/* Birth — Death years */}
+          {birthYear || deathYear ? (
+            <Text style={styles.yearsText}>
+              {birthYear || "?"} — {deathYear || "?"}
+            </Text>
+          ) : (
+            <Text style={styles.yearsText}>Add years in Edit Profile</Text>
+          )}
 
           {/* Bio */}
           <Text style={styles.bio}>{bio}</Text>
@@ -603,31 +621,13 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
 
-  // Decorative dots
-  dotRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
+  // Years text
+  yearsText: {
+    fontSize: 15,
+    color: Colors.ink500,
+    textAlign: "center",
     marginBottom: 12,
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: Colors.ink300,
-  },
-  dotSmall: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.ink300,
-    opacity: 0.5,
-  },
-  dotGreen: {
-    backgroundColor: "#6cab90",
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    letterSpacing: 0.5,
   },
 
   // Bio

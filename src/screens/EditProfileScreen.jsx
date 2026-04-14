@@ -13,9 +13,16 @@ import { Colors } from "../theme/colors";
 import AppLogo from "../components/AppLogo";
 
 export default function EditProfileScreen({ navigation, route }) {
-  const { currentName = "", currentBio = "" } = route.params || {};
+  const {
+    currentName = "",
+    currentBio = "",
+    currentBirthYear = "",
+    currentDeathYear = "",
+  } = route.params || {};
   const [name, setName] = useState(currentName);
   const [bio, setBio] = useState(currentBio);
+  const [birthYear, setBirthYear] = useState(currentBirthYear);
+  const [deathYear, setDeathYear] = useState(currentDeathYear);
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
@@ -34,7 +41,12 @@ export default function EditProfileScreen({ navigation, route }) {
     }
 
     Alert.alert("Profile updated", "Your display name was saved.");
-    navigation.goBack();
+    navigation.navigate("Profile", {
+      updatedName: name.trim(),
+      updatedBio: bio,
+      updatedBirthYear: birthYear.trim(),
+      updatedDeathYear: deathYear.trim(),
+    });
   };
 
   return (
@@ -62,6 +74,28 @@ export default function EditProfileScreen({ navigation, route }) {
           onChangeText={setName}
           placeholder="Enter your name"
           placeholderTextColor={Colors.ink300}
+        />
+
+        <Text style={styles.label}>Birth Year</Text>
+        <TextInput
+          style={styles.input}
+          value={birthYear}
+          onChangeText={setBirthYear}
+          placeholder="e.g. 1948"
+          placeholderTextColor={Colors.ink300}
+          keyboardType="number-pad"
+          maxLength={4}
+        />
+
+        <Text style={styles.label}>Death Year</Text>
+        <TextInput
+          style={styles.input}
+          value={deathYear}
+          onChangeText={setDeathYear}
+          placeholder="e.g. 2023"
+          placeholderTextColor={Colors.ink300}
+          keyboardType="number-pad"
+          maxLength={4}
         />
 
         <Text style={styles.label}>Bio</Text>
