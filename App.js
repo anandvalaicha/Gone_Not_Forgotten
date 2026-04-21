@@ -15,6 +15,8 @@ import MemorialDetailScreen from './src/screens/MemorialDetailScreen';
 import SignInScreen from './src/screens/SignInScreen';
 import SignUpScreen from './src/screens/SignUpScreen';
 import SplashScreen from './src/screens/SplashScreen';
+import StoryScreen from './src/screens/StoryScreen';
+import PlukQRScreen from './src/screens/PlukQRScreen';
 import { authService } from './src/services';
 
 const Stack = createNativeStackNavigator();
@@ -59,6 +61,8 @@ export default function App() {
             <Stack.Screen name="ScanQR" component={QRScannerScreen} />
             <Stack.Screen name="UserProfile" component={UserProfileScreen} />
             <Stack.Screen name="Detail" component={MemorialDetailScreen} />
+            <Stack.Screen name="Story" component={StoryScreen} />
+            <Stack.Screen name="PlukQR" component={PlukQRScreen} />
           </>
         ) : (
           <>

@@ -423,6 +423,20 @@ export default function HomeScreen({ navigation }) {
                   <Text style={styles.actionIcon}>◈</Text>
                   <Text style={styles.actionLabel}>Generate QR</Text>
                 </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.actionBtnSecondary]}
+                  onPress={() => navigation.navigate("Story")}
+                >
+                  <Text style={styles.actionIcon}>☰</Text>
+                  <Text style={styles.actionLabel}>Story</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.actionBtnSecondary]}
+                  onPress={() => navigation.navigate("PlukQR")}
+                >
+                  <Text style={styles.actionIcon}>⬡</Text>
+                  <Text style={styles.actionLabel}>Pluk QR Code</Text>
+                </TouchableOpacity>
               </View>
 
               {/* Memories section header */}
