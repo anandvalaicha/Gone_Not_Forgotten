@@ -13,7 +13,7 @@ import {
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { LinearGradient } from "expo-linear-gradient";
 import { memorialService, authService } from "../services";
-import { isFirebaseConfigured } from "../config/firebase";
+import { isSupabaseConfigured } from "../config/supabase";
 import { Colors } from "../theme/colors";
 import AppLogo from "../components/AppLogo";
 
@@ -83,7 +83,7 @@ export default function UserProfileScreen({ navigation, route }) {
 
   const loadUserProfile = async () => {
     try {
-      if (!isFirebaseConfigured) {
+      if (!isSupabaseConfigured) {
         // Demo mode
         setUserProfile(DEMO_USER_PROFILE);
         setLoading(false);

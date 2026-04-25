@@ -1,20 +1,24 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
+  Pressable,
   Alert,
   Image,
   ScrollView,
   ActivityIndicator,
   Dimensions,
+  Modal,
 } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { authService, memorialService } from "../services";
-import { isFirebaseConfigured } from "../config/firebase";
+import { isSupabaseConfigured } from "../config/supabase";
+import { useSignOut } from "../context/AuthContext";
 import { Colors } from "../theme/colors";
 
 const { width: SCREEN_W } = Dimensions.get("window");
@@ -34,24 +38,6 @@ const MONTHS = [
 ];
 const AVATAR_SIZE = 120;
 
-const DEMO_MEMORIALS = [
-  {
-    id: "demo-memorial-1",
-    title: "Eleanor Grace",
-    description:
-      "Today was perfect. Surrounded by the people I love, laughing, reminiscing, and just soaking it all in. Life has been good, and today was a beautiful reminder of that.",
-    createdAt: new Date("2023-12-01"),
-    photos: [
-      "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=900&q=80",
-      "https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?w=900&q=80",
-      "https://images.unsplash.com/photo-1511895426328-dc8714191011?w=900&q=80",
-      "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=900&q=80",
-    ],
-    videos: [],
-    audios: [],
-  },
-];
-
 const TABS = ["Memories", "Gallery", "Audio"];
 
 function getOrdinal(n) {
@@ -61,6 +47,7 @@ function getOrdinal(n) {
 }
 
 export default function ProfileScreen({ navigation, route }) {
+  const handleSignOut = useSignOut();
   const user = authService.getCurrentUser();
   const displayName =
     user?.displayName ||
@@ -74,9 +61,7 @@ export default function ProfileScreen({ navigation, route }) {
   );
   const [avatar, setAvatar] = useState(null);
   const [activeTab, setActiveTab] = useState("Memories");
-  const [memorials, setMemorials] = useState(
-    isFirebaseConfigured ? [] : DEMO_MEMORIALS,
-  );
+  const [memorials, setMemorials] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
 
@@ -99,15 +84,25 @@ export default function ProfileScreen({ navigation, route }) {
   ]);
 
   useEffect(() => {
-    if (!isFirebaseConfigured) return;
     const userId = user?.uid;
-    if (!userId) return;
+    if (!userId && isSupabaseConfigured) return;
     setLoading(true);
     memorialService.getUserMemorials(userId).then((result) => {
       if (result.success) setMemorials(result.memorials);
       setLoading(false);
     });
   }, []);
+
+  // Reload whenever the profile screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      const userId = user?.uid;
+      if (!userId && isSupabaseConfigured) return;
+      memorialService.getUserMemorials(userId).then((result) => {
+        if (result.success) setMemorials(result.memorials);
+      });
+    }, [user?.uid]),
+  );
 
   const pickAvatar = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -120,17 +115,11 @@ export default function ProfileScreen({ navigation, route }) {
       setAvatar(result.assets[0].uri);
   };
 
-  const signOut = async () => {
-    Alert.alert("Sign Out", "Are you sure?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Sign Out",
-        style: "destructive",
-        onPress: async () => {
-          await authService.signOutUser();
-        },
-      },
-    ]);
+  const signOut = () => {
+    // Close the dropdown first, then immediately sign out.
+    // No Alert — Alerts inside Modals can silently fail on some platforms.
+    setShowMenu(false);
+    handleSignOut();
   };
 
   const allPhotos = memorials.flatMap((m) => m.photos || []);
@@ -155,9 +144,15 @@ export default function ProfileScreen({ navigation, route }) {
       );
 
     return memorials.map((item) => {
-      const raw = item.createdAt;
+      const raw = item.createdAt ?? item.created_at;
       const date =
-        raw instanceof Date ? raw : raw?.toDate ? raw.toDate() : new Date();
+        raw instanceof Date
+          ? raw
+          : raw?.toDate
+            ? raw.toDate()
+            : raw
+              ? new Date(raw)
+              : new Date();
       const day = date.getDate();
       const month = MONTHS[date.getMonth()];
       const fullDate = `${month} ${day}, ${date.getFullYear()}`;
@@ -181,8 +176,9 @@ export default function ProfileScreen({ navigation, route }) {
                     item.photos.length === 1 && styles.photoSingle,
                     item.photos.length === 3 && idx === 2 && styles.photoWide,
                   ]}
+                  onError={() => {}}
                 />
-              ))}
+              ))}{" "}
               <LinearGradient
                 colors={["transparent", "rgba(0,0,0,0.35)"]}
                 style={styles.photoGradient}
@@ -249,6 +245,7 @@ export default function ProfileScreen({ navigation, route }) {
                 styles.masonryPhoto,
                 { aspectRatio: idx % 3 === 0 ? 1 : idx % 3 === 1 ? 0.75 : 1.3 },
               ]}
+              onError={() => {}}
             />
           ))}
         </View>
@@ -261,6 +258,7 @@ export default function ProfileScreen({ navigation, route }) {
                 styles.masonryPhoto,
                 { aspectRatio: idx % 3 === 0 ? 1.3 : idx % 3 === 1 ? 1 : 0.75 },
               ]}
+              onError={() => {}}
             />
           ))}
         </View>
@@ -308,62 +306,64 @@ export default function ProfileScreen({ navigation, route }) {
 
   return (
     <View style={styles.container}>
-      {showMenu && (
-        <TouchableOpacity
-          style={styles.overlay}
-          activeOpacity={1}
-          onPress={() => setShowMenu(false)}
-        />
-      )}
-      {showMenu && (
-        <View style={styles.dropdownMenu}>
-          <TouchableOpacity
-            style={styles.dropdownItem}
-            onPress={() => {
-              setShowMenu(false);
-              navigation.navigate("EditProfile", {
-                currentName: profileName,
-                currentBio: bio,
-                currentBirthYear: birthYear,
-                currentDeathYear: deathYear,
-              });
-            }}
-          >
-            <MaterialCommunityIcons
-              name="account-edit"
-              size={20}
-              color={Colors.ink700}
-            />
-            <Text style={styles.dropdownText}>Edit Profile</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.dropdownItem}
-            onPress={() => {
-              setShowMenu(false);
-              navigation.navigate("Settings");
-            }}
-          >
-            <MaterialCommunityIcons
-              name="cog"
-              size={20}
-              color={Colors.ink700}
-            />
-            <Text style={styles.dropdownText}>Settings</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.dropdownItem, styles.dropdownItemDestructive]}
-            onPress={() => {
-              setShowMenu(false);
-              signOut();
-            }}
-          >
-            <MaterialCommunityIcons name="logout" size={20} color="#dc3545" />
-            <Text style={[styles.dropdownText, styles.dropdownTextDestructive]}>
-              Sign Out
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
+      {/* Dropdown menu — nested Pressable pattern:
+           outer Pressable = full-screen backdrop (closes menu on outside tap)
+           inner Pressable = dropdown card (stops touch propagation to backdrop) */}
+      <Modal
+        visible={showMenu}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowMenu(false)}
+      >
+        <Pressable style={styles.overlay} onPress={() => setShowMenu(false)}>
+          <Pressable style={styles.dropdownMenu} onPress={() => {}}>
+            <TouchableOpacity
+              style={styles.dropdownItem}
+              onPress={() => {
+                setShowMenu(false);
+                navigation.navigate("EditProfile", {
+                  currentName: profileName,
+                  currentBio: bio,
+                  currentBirthYear: birthYear,
+                  currentDeathYear: deathYear,
+                });
+              }}
+            >
+              <MaterialCommunityIcons
+                name="account-edit"
+                size={20}
+                color={Colors.ink700}
+              />
+              <Text style={styles.dropdownText}>Edit Profile</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.dropdownItem}
+              onPress={() => {
+                setShowMenu(false);
+                navigation.navigate("Settings");
+              }}
+            >
+              <MaterialCommunityIcons
+                name="cog"
+                size={20}
+                color={Colors.ink700}
+              />
+              <Text style={styles.dropdownText}>Settings</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.dropdownItem, styles.dropdownItemDestructive]}
+              onPress={signOut}
+            >
+              <MaterialCommunityIcons name="logout" size={20} color="#dc3545" />
+              <Text
+                style={[styles.dropdownText, styles.dropdownTextDestructive]}
+              >
+                Sign Out
+              </Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Cream top section */}
         <View style={styles.topSection}>

@@ -17,7 +17,7 @@ import {
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import { isFirebaseConfigured } from "../config/firebase";
+import { isSupabaseConfigured } from "../config/supabase";
 import { memorialService, authService } from "../services";
 import { Colors } from "../theme/colors";
 import AppLogo from "../components/AppLogo";
@@ -63,7 +63,7 @@ export default function StoryScreen({ navigation }) {
   useEffect(() => {
     (async () => {
       setLoadingMemorials(true);
-      if (!isFirebaseConfigured) {
+      if (!isSupabaseConfigured) {
         setMemorials([
           {
             id: "demo-1",

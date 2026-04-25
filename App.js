@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -18,6 +18,7 @@ import SplashScreen from './src/screens/SplashScreen';
 import StoryScreen from './src/screens/StoryScreen';
 import PlukQRScreen from './src/screens/PlukQRScreen';
 import { authService } from './src/services';
+import { AuthContext } from './src/context/AuthContext';
 
 const Stack = createNativeStackNavigator();
 
@@ -25,31 +26,67 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [initializing, setInitializing] = useState(true);
   const [showSplash, setShowSplash] = useState(true);
+  // Guard: once sign-out starts, ignore any Supabase auth callbacks that
+  // fire afterwards (e.g. from the autoRefreshToken timer).
+  const signingOut = useRef(false);
+
+  // Must be declared before any early returns (hook rules)
+  const handleSignOut = useCallback(() => {
+    console.log('[SignOut] button pressed — clearing user state immediately');
+    // ── Synchronous: switch the navigator to the auth stack RIGHT NOW ──────
+    // Do NOT await anything here. Setting user=null is enough to unmount the
+    // app stack and render SignIn. Storage cleanup happens in the background.
+    signingOut.current = true;
+    setUser(null);
+    setShowSplash(false); // go straight to login, no splash on sign-out
+
+    // ── Background: clear AsyncStorage + reset supabase in-memory session ──
+    authService.signOutUser()
+      .then(() => console.log('[SignOut] storage cleared OK'))
+      .catch((e) => console.warn('[SignOut] cleanup error (non-fatal):', e))
+      .finally(() => {
+        setTimeout(() => { signingOut.current = false; }, 500);
+      });
+  }, []);
 
   useEffect(() => {
     const unregister = authService.onAuthStateChange((currentUser) => {
+      console.log('[AuthState] changed, signingOut=', signingOut.current, 'user=', currentUser?.email ?? null);
+      // Drop any session restoration that arrives during/after sign-out
+      if (signingOut.current) {
+        console.log('[AuthState] ignored — sign-out in progress');
+        return;
+      }
       setUser(currentUser);
-      if (initializing) setInitializing(false);
+      setInitializing(false);
+      // Do NOT reset showSplash here — SplashScreen calls onFinish itself
     });
     return unregister;
-  }, [initializing]);
+  }, []);
 
   if (initializing) {
     return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" color="#6cab90" />
-        <Text style={styles.loadingText}>Loading...</Text>
-      </View>
+      <AuthContext.Provider value={handleSignOut}>
+        <View style={styles.loading}>
+          <ActivityIndicator size="large" color="#6cab90" />
+          <Text style={styles.loadingText}>Loading...</Text>
+        </View>
+      </AuthContext.Provider>
     );
   }
 
   if (showSplash && !user) {
-    return <SplashScreen onFinish={() => setShowSplash(false)} />;
+    return (
+      <AuthContext.Provider value={handleSignOut}>
+        <SplashScreen onFinish={() => setShowSplash(false)} />
+      </AuthContext.Provider>
+    );
   }
 
   return (
-    <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <AuthContext.Provider value={handleSignOut}>
+      <NavigationContainer>
+      <Stack.Navigator key={user ? 'app' : 'auth'} screenOptions={{ headerShown: false }}>
         {user ? (
           <>
             <Stack.Screen name="Home" component={HomeScreen} />
@@ -71,7 +108,8 @@ export default function App() {
           </>
         )}
       </Stack.Navigator>
-    </NavigationContainer>
+      </NavigationContainer>
+    </AuthContext.Provider>
   );
 }
 

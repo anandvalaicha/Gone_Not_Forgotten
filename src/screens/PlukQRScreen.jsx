@@ -19,7 +19,7 @@ import * as FileSystem from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
 import QRCode from "react-native-qrcode-svg";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import { isFirebaseConfigured } from "../config/firebase";
+import { isSupabaseConfigured } from "../config/supabase";
 import { memorialService, authService } from "../services";
 import { Colors } from "../theme/colors";
 import AppLogo from "../components/AppLogo";
@@ -55,7 +55,7 @@ export default function PlukQRScreen({ navigation }) {
   // Load user memorials for the picker
   const loadMemorials = async () => {
     setLoadingMemorials(true);
-    if (!isFirebaseConfigured) {
+    if (!isSupabaseConfigured) {
       setMemorials([
         {
           id: "demo-memorial-1",
