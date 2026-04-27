@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { authService } from "../services";
 import { Colors } from "../theme/colors";
+import AppLogo from "../components/AppLogo";
 
 export default function SignInScreen({ navigation }) {
   const [email, setEmail] = useState("");
@@ -24,7 +25,10 @@ export default function SignInScreen({ navigation }) {
     const result = await authService.signIn(email.trim(), password);
     setLoading(false);
     if (!result.success) {
-      Alert.alert("Sign in failed", result.error || "Please check your credentials");
+      Alert.alert(
+        "Sign in failed",
+        result.error || "Please check your credentials",
+      );
     }
   };
 
@@ -42,15 +46,7 @@ export default function SignInScreen({ navigation }) {
       <View style={styles.card}>
         {/* Logo — Option 1: Butterfly + Bookmark */}
         <View style={styles.logoWrap}>
-          <View style={styles.logoSeal}>
-            {/* Butterfly wings (two mirrored arrow shapes) */}
-            <View style={styles.butterflyRow}>
-              <View style={[styles.wing, styles.wingLeft]} />
-              <View style={[styles.wing, styles.wingRight]} />
-            </View>
-            {/* Bookmark / save tab */}
-            <View style={styles.bookmark} />
-          </View>
+          <AppLogo size={72} />
         </View>
 
         <Text style={styles.brand}>Gone Not Forgotten</Text>
@@ -129,48 +125,6 @@ const styles = StyleSheet.create({
   logoWrap: {
     alignItems: "center",
     marginBottom: 14,
-  },
-  logoSeal: {
-    width: 72,
-    height: 72,
-    borderRadius: 20,
-    backgroundColor: Colors.green700,
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 4,
-  },
-  butterflyRow: {
-    flexDirection: "row",
-    gap: 3,
-    marginBottom: 2,
-  },
-  wing: {
-    width: 0,
-    height: 0,
-    borderStyle: "solid",
-  },
-  wingLeft: {
-    borderTopWidth: 12,
-    borderBottomWidth: 12,
-    borderRightWidth: 14,
-    borderTopColor: "transparent",
-    borderBottomColor: "transparent",
-    borderRightColor: Colors.white,
-  },
-  wingRight: {
-    borderTopWidth: 12,
-    borderBottomWidth: 12,
-    borderLeftWidth: 14,
-    borderTopColor: "transparent",
-    borderBottomColor: "transparent",
-    borderLeftColor: Colors.white,
-  },
-  bookmark: {
-    width: 16,
-    height: 18,
-    backgroundColor: Colors.green300,
-    borderTopLeftRadius: 3,
-    borderTopRightRadius: 3,
   },
 
   brand: {

@@ -1,10 +1,12 @@
 import { View, Text, StyleSheet } from "react-native";
 import { Colors } from "../theme/colors";
+import AppLogo from "../components/AppLogo";
 
 export default function GalleryScreen() {
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Gallery</Text>
+      <AppLogo size={56} />
+      <Text style={[styles.title, { marginTop: 16 }]}>Gallery</Text>
       <Text style={styles.subtitle}>Coming soon — memorial media gallery</Text>
     </View>
   );

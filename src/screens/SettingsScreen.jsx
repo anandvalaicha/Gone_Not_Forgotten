@@ -12,6 +12,7 @@ import {
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { settingsService } from "../services";
 import { Colors } from "../theme/colors";
+import AppLogo from "../components/AppLogo";
 
 export default function SettingsScreen({ navigation }) {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -58,7 +59,8 @@ export default function SettingsScreen({ navigation }) {
             color={Colors.ink700}
           />
         </TouchableOpacity>
-        <Text style={styles.title}>Settings</Text>
+        <AppLogo size={32} />
+        <Text style={[styles.title, { marginLeft: 8 }]}>Settings</Text>
       </View>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.section}>

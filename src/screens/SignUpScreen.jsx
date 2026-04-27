@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { authService } from "../services";
 import { Colors } from "../theme/colors";
+import AppLogo from "../components/AppLogo";
 
 export default function SignUpScreen({ navigation }) {
   const [email, setEmail] = useState("");
@@ -38,13 +39,7 @@ export default function SignUpScreen({ navigation }) {
       <View style={styles.card}>
         {/* Logo seal */}
         <View style={styles.logoWrap}>
-          <View style={styles.logoSeal}>
-            <View style={styles.butterflyRow}>
-              <View style={[styles.wing, styles.wingLeft]} />
-              <View style={[styles.wing, styles.wingRight]} />
-            </View>
-            <View style={styles.bookmark} />
-          </View>
+          <AppLogo size={72} />
         </View>
 
         <Text style={styles.brand}>Gone Not Forgotten</Text>
@@ -52,7 +47,8 @@ export default function SignUpScreen({ navigation }) {
 
         <View style={styles.demoBox}>
           <Text style={styles.demoText}>
-            Firebase is not connected yet. Use the demo login on the Sign In screen to try the app.
+            Firebase is not connected yet. Use the demo login on the Sign In
+            screen to try the app.
           </Text>
         </View>
 
@@ -122,48 +118,6 @@ const styles = StyleSheet.create({
   logoWrap: {
     alignItems: "center",
     marginBottom: 14,
-  },
-  logoSeal: {
-    width: 72,
-    height: 72,
-    borderRadius: 20,
-    backgroundColor: Colors.green700,
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 4,
-  },
-  butterflyRow: {
-    flexDirection: "row",
-    gap: 3,
-    marginBottom: 2,
-  },
-  wing: {
-    width: 0,
-    height: 0,
-    borderStyle: "solid",
-  },
-  wingLeft: {
-    borderTopWidth: 12,
-    borderBottomWidth: 12,
-    borderRightWidth: 14,
-    borderTopColor: "transparent",
-    borderBottomColor: "transparent",
-    borderRightColor: Colors.white,
-  },
-  wingRight: {
-    borderTopWidth: 12,
-    borderBottomWidth: 12,
-    borderLeftWidth: 14,
-    borderTopColor: "transparent",
-    borderBottomColor: "transparent",
-    borderLeftColor: Colors.white,
-  },
-  bookmark: {
-    width: 16,
-    height: 18,
-    backgroundColor: Colors.green300,
-    borderTopLeftRadius: 3,
-    borderTopRightRadius: 3,
   },
   brand: {
     fontSize: 26,

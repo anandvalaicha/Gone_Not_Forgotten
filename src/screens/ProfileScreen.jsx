@@ -1,20 +1,24 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
+  Pressable,
   Alert,
   Image,
   ScrollView,
   ActivityIndicator,
   Dimensions,
+  Modal,
 } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { authService, memorialService } from "../services";
-import { isFirebaseConfigured } from "../config/firebase";
+import { isSupabaseConfigured } from "../config/supabase";
+import { useSignOut } from "../context/AuthContext";
 import { Colors } from "../theme/colors";
 
 const { width: SCREEN_W } = Dimensions.get("window");
@@ -34,24 +38,6 @@ const MONTHS = [
 ];
 const AVATAR_SIZE = 120;
 
-const DEMO_MEMORIALS = [
-  {
-    id: "demo-memorial-1",
-    title: "Eleanor Grace",
-    description:
-      "Today was perfect. Surrounded by the people I love, laughing, reminiscing, and just soaking it all in. Life has been good, and today was a beautiful reminder of that.",
-    createdAt: new Date("2023-12-01"),
-    photos: [
-      "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=900&q=80",
-      "https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?w=900&q=80",
-      "https://images.unsplash.com/photo-1511895426328-dc8714191011?w=900&q=80",
-      "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=900&q=80",
-    ],
-    videos: [],
-    audios: [],
-  },
-];
-
 const TABS = ["Memories", "Gallery", "Audio"];
 
 function getOrdinal(n) {
@@ -60,21 +46,22 @@ function getOrdinal(n) {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
-export default function ProfileScreen({ navigation }) {
+export default function ProfileScreen({ navigation, route }) {
+  const handleSignOut = useSignOut();
   const user = authService.getCurrentUser();
   const displayName =
     user?.displayName ||
     user?.email?.split("@")[0]?.replace(/[._]/g, " ") ||
     "User";
   const [profileName, setProfileName] = useState(displayName);
+  const [birthYear, setBirthYear] = useState("");
+  const [deathYear, setDeathYear] = useState("");
   const [bio, setBio] = useState(
     "Artist, educator, and devoted mother—painting life's canvas with love and color.",
   );
   const [avatar, setAvatar] = useState(null);
   const [activeTab, setActiveTab] = useState("Memories");
-  const [memorials, setMemorials] = useState(
-    isFirebaseConfigured ? [] : DEMO_MEMORIALS,
-  );
+  const [memorials, setMemorials] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
 
@@ -83,15 +70,39 @@ export default function ProfileScreen({ navigation }) {
   }, [displayName]);
 
   useEffect(() => {
-    if (!isFirebaseConfigured) return;
+    if (route.params?.updatedName) setProfileName(route.params.updatedName);
+    if (route.params?.updatedBio) setBio(route.params.updatedBio);
+    if (route.params?.updatedBirthYear !== undefined)
+      setBirthYear(route.params.updatedBirthYear);
+    if (route.params?.updatedDeathYear !== undefined)
+      setDeathYear(route.params.updatedDeathYear);
+  }, [
+    route.params?.updatedName,
+    route.params?.updatedBio,
+    route.params?.updatedBirthYear,
+    route.params?.updatedDeathYear,
+  ]);
+
+  useEffect(() => {
     const userId = user?.uid;
-    if (!userId) return;
+    if (!userId && isSupabaseConfigured) return;
     setLoading(true);
     memorialService.getUserMemorials(userId).then((result) => {
       if (result.success) setMemorials(result.memorials);
       setLoading(false);
     });
   }, []);
+
+  // Reload whenever the profile screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      const userId = user?.uid;
+      if (!userId && isSupabaseConfigured) return;
+      memorialService.getUserMemorials(userId).then((result) => {
+        if (result.success) setMemorials(result.memorials);
+      });
+    }, [user?.uid]),
+  );
 
   const pickAvatar = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -104,17 +115,11 @@ export default function ProfileScreen({ navigation }) {
       setAvatar(result.assets[0].uri);
   };
 
-  const signOut = async () => {
-    Alert.alert("Sign Out", "Are you sure?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Sign Out",
-        style: "destructive",
-        onPress: async () => {
-          await authService.signOutUser();
-        },
-      },
-    ]);
+  const signOut = () => {
+    // Close the dropdown first, then immediately sign out.
+    // No Alert — Alerts inside Modals can silently fail on some platforms.
+    setShowMenu(false);
+    handleSignOut();
   };
 
   const allPhotos = memorials.flatMap((m) => m.photos || []);
@@ -139,9 +144,15 @@ export default function ProfileScreen({ navigation }) {
       );
 
     return memorials.map((item) => {
-      const raw = item.createdAt;
+      const raw = item.createdAt ?? item.created_at;
       const date =
-        raw instanceof Date ? raw : raw?.toDate ? raw.toDate() : new Date();
+        raw instanceof Date
+          ? raw
+          : raw?.toDate
+            ? raw.toDate()
+            : raw
+              ? new Date(raw)
+              : new Date();
       const day = date.getDate();
       const month = MONTHS[date.getMonth()];
       const fullDate = `${month} ${day}, ${date.getFullYear()}`;
@@ -165,8 +176,9 @@ export default function ProfileScreen({ navigation }) {
                     item.photos.length === 1 && styles.photoSingle,
                     item.photos.length === 3 && idx === 2 && styles.photoWide,
                   ]}
+                  onError={() => {}}
                 />
-              ))}
+              ))}{" "}
               <LinearGradient
                 colors={["transparent", "rgba(0,0,0,0.35)"]}
                 style={styles.photoGradient}
@@ -233,6 +245,7 @@ export default function ProfileScreen({ navigation }) {
                 styles.masonryPhoto,
                 { aspectRatio: idx % 3 === 0 ? 1 : idx % 3 === 1 ? 0.75 : 1.3 },
               ]}
+              onError={() => {}}
             />
           ))}
         </View>
@@ -245,6 +258,7 @@ export default function ProfileScreen({ navigation }) {
                 styles.masonryPhoto,
                 { aspectRatio: idx % 3 === 0 ? 1.3 : idx % 3 === 1 ? 1 : 0.75 },
               ]}
+              onError={() => {}}
             />
           ))}
         </View>
@@ -292,75 +306,81 @@ export default function ProfileScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      {showMenu && (
-        <TouchableOpacity
-          style={styles.overlay}
-          activeOpacity={1}
-          onPress={() => setShowMenu(false)}
-        />
-      )}
-      {showMenu && (
-        <View style={styles.dropdownMenu}>
-          <TouchableOpacity
-            style={styles.dropdownItem}
-            onPress={() => {
-              setShowMenu(false);
-              navigation.navigate("EditProfile", {
-                currentName: profileName,
-                currentBio: bio,
-              });
-            }}
-          >
-            <MaterialCommunityIcons
-              name="account-edit"
-              size={20}
-              color={Colors.ink700}
-            />
-            <Text style={styles.dropdownText}>Edit Profile</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.dropdownItem}
-            onPress={() => {
-              setShowMenu(false);
-              navigation.navigate("Settings");
-            }}
-          >
-            <MaterialCommunityIcons
-              name="cog"
-              size={20}
-              color={Colors.ink700}
-            />
-            <Text style={styles.dropdownText}>Settings</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.dropdownItem, styles.dropdownItemDestructive]}
-            onPress={() => {
-              setShowMenu(false);
-              signOut();
-            }}
-          >
-            <MaterialCommunityIcons name="logout" size={20} color="#dc3545" />
-            <Text style={[styles.dropdownText, styles.dropdownTextDestructive]}>
-              Sign Out
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
+      {/* Dropdown menu — nested Pressable pattern:
+           outer Pressable = full-screen backdrop (closes menu on outside tap)
+           inner Pressable = dropdown card (stops touch propagation to backdrop) */}
+      <Modal
+        visible={showMenu}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowMenu(false)}
+      >
+        <Pressable style={styles.overlay} onPress={() => setShowMenu(false)}>
+          <Pressable style={styles.dropdownMenu} onPress={() => {}}>
+            <TouchableOpacity
+              style={styles.dropdownItem}
+              onPress={() => {
+                setShowMenu(false);
+                navigation.navigate("EditProfile", {
+                  currentName: profileName,
+                  currentBio: bio,
+                  currentBirthYear: birthYear,
+                  currentDeathYear: deathYear,
+                });
+              }}
+            >
+              <MaterialCommunityIcons
+                name="account-edit"
+                size={20}
+                color={Colors.ink700}
+              />
+              <Text style={styles.dropdownText}>Edit Profile</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.dropdownItem}
+              onPress={() => {
+                setShowMenu(false);
+                navigation.navigate("Settings");
+              }}
+            >
+              <MaterialCommunityIcons
+                name="cog"
+                size={20}
+                color={Colors.ink700}
+              />
+              <Text style={styles.dropdownText}>Settings</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.dropdownItem, styles.dropdownItemDestructive]}
+              onPress={signOut}
+            >
+              <MaterialCommunityIcons name="logout" size={20} color="#dc3545" />
+              <Text
+                style={[styles.dropdownText, styles.dropdownTextDestructive]}
+              >
+                Sign Out
+              </Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Cream top section */}
         <View style={styles.topSection}>
           {/* Top nav */}
           <View style={styles.topNav}>
-            <TouchableOpacity
-              style={styles.navBtn}
-              onPress={() => navigation.goBack()}
-            >
-              <MaterialCommunityIcons
-                name="arrow-left"
-                size={20}
-                color={Colors.ink700}
-              />
-            </TouchableOpacity>
+            <View style={styles.navLeft}>
+              <TouchableOpacity
+                style={styles.navBtn}
+                onPress={() => navigation.goBack()}
+              >
+                <MaterialCommunityIcons
+                  name="arrow-left"
+                  size={20}
+                  color={Colors.ink700}
+                />
+              </TouchableOpacity>
+            </View>
             <Text style={styles.navTitle}>My Profile</Text>
             <View style={styles.navRight}>
               <TouchableOpacity
@@ -427,14 +447,14 @@ export default function ProfileScreen({ navigation }) {
           {/* Name */}
           <Text style={styles.name}>{profileName}</Text>
 
-          {/* Decorative dot row */}
-          <View style={styles.dotRow}>
-            <View style={[styles.dot, styles.dotSmall]} />
-            <View style={styles.dot} />
-            <View style={[styles.dot, styles.dotGreen]} />
-            <View style={styles.dot} />
-            <View style={[styles.dot, styles.dotSmall]} />
-          </View>
+          {/* Birth — Death years */}
+          {birthYear || deathYear ? (
+            <Text style={styles.yearsText}>
+              {birthYear || "?"} — {deathYear || "?"}
+            </Text>
+          ) : (
+            <Text style={styles.yearsText}>Add years in Edit Profile</Text>
+          )}
 
           {/* Bio */}
           <Text style={styles.bio}>{bio}</Text>
@@ -528,7 +548,13 @@ const styles = StyleSheet.create({
     color: Colors.ink700,
     letterSpacing: 0.3,
   },
-  navRight: { flexDirection: "row", gap: 8 },
+  navRight: {
+    flexDirection: "row",
+    gap: 8,
+    minWidth: 88,
+    justifyContent: "flex-end",
+  },
+  navLeft: { flexDirection: "row", minWidth: 88 },
   navBtn: {
     width: 40,
     height: 40,
@@ -595,31 +621,13 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
 
-  // Decorative dots
-  dotRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
+  // Years text
+  yearsText: {
+    fontSize: 15,
+    color: Colors.ink500,
+    textAlign: "center",
     marginBottom: 12,
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: Colors.ink300,
-  },
-  dotSmall: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.ink300,
-    opacity: 0.5,
-  },
-  dotGreen: {
-    backgroundColor: "#6cab90",
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    letterSpacing: 0.5,
   },
 
   // Bio

@@ -1,14 +1,8 @@
-import { auth, isFirebaseConfigured } from '../config/firebase';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, updateProfile } from 'firebase/auth';
-
-// Note: Google Sign-In with signInWithPopup may not work in React Native.
-// For mobile, consider using expo-auth-session or react-native-google-signin.
-// This is a placeholder for web or when properly configured.
-
-const firebaseConfigError =
-  'Firebase is not configured yet. Update src/config/firebase.js with your real Firebase project keys and enable Email/Password sign-in in Firebase Console.';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase, isSupabaseConfigured, SUPABASE_URL } from '../config/supabase';
 
 const DEMO_USER = {
+  id: 'demo-user-001',
   uid: 'demo-user-001',
   email: 'demo@gonenotforgotten.com',
   displayName: 'Demo User',
@@ -21,126 +15,172 @@ const notifyDemoAuthListeners = () => {
   demoAuthListeners.forEach((listener) => listener(demoSessionUser));
 };
 
+// Normalize Supabase user shape to match app's expected format
+const normalizeUser = (supabaseUser) => {
+  if (!supabaseUser) return null;
+  return {
+    id: supabaseUser.id,
+    uid: supabaseUser.id,
+    email: supabaseUser.email,
+    displayName:
+      supabaseUser.user_metadata?.display_name ||
+      supabaseUser.user_metadata?.full_name ||
+      supabaseUser.email?.split('@')[0]?.replace(/[._]/g, ' ') ||
+      'User',
+  };
+};
+
+// Module-level cache so getCurrentUser() can stay synchronous
+let currentUser = null;
+
 export const authService = {
-  // Email/Password Sign Up
   signUp: async (email, password) => {
-    if (!isFirebaseConfigured) {
-      if (email.trim().toLowerCase() === DEMO_USER.email && password === 'Demo@1234') {
+    if (!isSupabaseConfigured) {
+      if (
+        email.trim().toLowerCase() === DEMO_USER.email &&
+        password === 'Demo@1234'
+      ) {
         demoSessionUser = DEMO_USER;
+        currentUser = DEMO_USER;
         notifyDemoAuthListeners();
         return { success: true, user: DEMO_USER, demo: true };
       }
       return {
         success: false,
-        error: `${firebaseConfigError}\n\nTemporary demo login:\nEmail: ${DEMO_USER.email}\nPassword: Demo@1234`,
+        error: 'Supabase is not configured yet.\n\nTemporary demo login:\nEmail: demo@gonenotforgotten.com\nPassword: Demo@1234',
       };
     }
-
-    try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      return { success: true, user: userCredential.user };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
+    const { data, error } = await supabase.auth.signUp({ email, password });
+    if (error) return { success: false, error: error.message };
+    const user = normalizeUser(data.user);
+    currentUser = user;
+    return { success: true, user };
   },
 
-  // Email/Password Sign In
   signIn: async (email, password) => {
-    if (!isFirebaseConfigured) {
-      if (email.trim().toLowerCase() === DEMO_USER.email && password === 'Demo@1234') {
+    if (!isSupabaseConfigured) {
+      if (
+        email.trim().toLowerCase() === DEMO_USER.email &&
+        password === 'Demo@1234'
+      ) {
         demoSessionUser = DEMO_USER;
+        currentUser = DEMO_USER;
         notifyDemoAuthListeners();
         return { success: true, user: DEMO_USER, demo: true };
       }
       return {
         success: false,
-        error: `Use the temporary demo login for now:\nEmail: ${DEMO_USER.email}\nPassword: Demo@1234`,
+        error: 'Use the temporary demo login:\nEmail: demo@gonenotforgotten.com\nPassword: Demo@1234',
       };
     }
-
-    try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      return { success: true, user: userCredential.user };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error) return { success: false, error: error.message };
+    const user = normalizeUser(data.user);
+    currentUser = user;
+    return { success: true, user };
   },
 
-  // Google Sign In (placeholder - may need different implementation for React Native)
   signInWithGoogle: async () => {
-    if (!isFirebaseConfigured) {
-      return { success: false, error: firebaseConfigError };
-    }
-
-    try {
-      const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      return { success: true, user: result.user };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
+    return {
+      success: false,
+      error: 'Google sign-in requires native OAuth setup with Supabase.',
+    };
   },
 
-  // Sign Out
   signOutUser: async () => {
-    if (!isFirebaseConfigured) {
+    if (!isSupabaseConfigured) {
       demoSessionUser = null;
+      currentUser = null;
       notifyDemoAuthListeners();
       return { success: true };
     }
 
+    // ── Step 1: Remove the auth token key directly (exact key from storage) ──
+    const AUTH_STORAGE_KEY = 'sb-usphkmetleulwsrqcijc-auth-token';
     try {
-      await signOut(auth);
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: error.message };
+      const before = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
+      console.log('[SignOut] token key exists before removal:', before !== null);
+      await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+      const after = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
+      console.log('[SignOut] token key exists after removal:', after !== null);
+    } catch (e) {
+      console.warn('[SignOut] AsyncStorage.removeItem failed:', e);
     }
+
+    // ── Step 2: Sweep any other sb- / supabase keys just in case ─────────────
+    try {
+      const allKeys = await AsyncStorage.getAllKeys();
+      console.log('[SignOut] all storage keys:', allKeys);
+      const supabaseKeys = allKeys.filter(
+        (k) => k.startsWith('sb-') || k.toLowerCase().includes('supabase'),
+      );
+      if (supabaseKeys.length > 0) {
+        console.log('[SignOut] removing extra keys:', supabaseKeys);
+        await AsyncStorage.multiRemove(supabaseKeys);
+      }
+    } catch (e) {
+      console.warn('[SignOut] sweep error:', e);
+    }
+
+    // ── Step 3: Tell the Supabase client to sign out locally ─────────────────
+    try {
+      console.log('[SignOut] calling supabase.auth.signOut({ scope: local })');
+      await supabase.auth.signOut({ scope: 'local' });
+      console.log('[SignOut] supabase.auth.signOut completed');
+    } catch (e) {
+      console.warn('[SignOut] supabase.auth.signOut error (non-fatal):', e);
+    }
+
+    currentUser = null;
+    console.log('[SignOut] done — currentUser cleared');
+    return { success: true };
   },
 
-  // Update the current user's profile (display name, photo URL, etc.)
   updateUserProfile: async (data) => {
-    if (!isFirebaseConfigured) {
-      if (!demoSessionUser) {
-        return { success: false, error: firebaseConfigError };
-      }
+    if (!isSupabaseConfigured) {
+      if (!demoSessionUser) return { success: false, error: 'Not signed in.' };
       demoSessionUser = { ...demoSessionUser, ...data };
+      currentUser = demoSessionUser;
       notifyDemoAuthListeners();
       return { success: true, user: demoSessionUser };
     }
-
-    if (!auth?.currentUser) {
-      return { success: false, error: 'No authenticated user available.' };
-    }
-
-    try {
-      await updateProfile(auth.currentUser, data);
-      return { success: true, user: auth.currentUser };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
+    const { data: updated, error } = await supabase.auth.updateUser({
+      data: {
+        display_name: data.displayName,
+        photo_url: data.photoURL,
+      },
+    });
+    if (error) return { success: false, error: error.message };
+    const user = normalizeUser(updated.user);
+    currentUser = user;
+    return { success: true, user };
   },
 
-  // Listen to auth state changes
   onAuthStateChange: (callback) => {
-    if (!isFirebaseConfigured || !auth) {
+    if (!isSupabaseConfigured) {
       demoAuthListeners.add(callback);
       callback(demoSessionUser);
       return () => demoAuthListeners.delete(callback);
     }
-    try {
-      return onAuthStateChanged(auth, callback);
-    } catch (error) {
-      console.warn('Auth state change error:', error.message);
-      callback(demoSessionUser);
-      return () => {};
-    }
+    // Fire immediately with existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const user = normalizeUser(session?.user ?? null);
+      currentUser = user;
+      callback(user);
+    });
+    // Subscribe to future changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      const user = normalizeUser(session?.user ?? null);
+      currentUser = user;
+      callback(user);
+    });
+    return () => subscription.unsubscribe();
   },
 
-  // Get current user
-  getCurrentUser: () => {
-    if (!isFirebaseConfigured || !auth) {
-      return demoSessionUser;
-    }
-    return auth.currentUser;
-  }
+  getCurrentUser: () => currentUser,
 };
