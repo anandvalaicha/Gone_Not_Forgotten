@@ -2,10 +2,10 @@ import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ─── YOUR SUPABASE PROJECT CREDENTIALS ────────────────────────────────────────
-// URL:  https://usphkmetleulwsrqcijc.supabase.co
+// URL:  https://rsxeuflqdwoeohyvrlgp.supabase.co
 // KEY:  Project Settings → API → anon public  (the long eyJ... string)
-export const SUPABASE_URL = 'https://usphkmetleulwsrqcijc.supabase.co';
-export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzcGhrbWV0bGV1bHdzcnFjaWpjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxNDM3NDEsImV4cCI6MjA5MTcxOTc0MX0.qTJIwasA1yIw7m62EFt2x7sQqVYj86j-TUgwFCOTcvw'; // ← paste your anon key here
+export const SUPABASE_URL = 'https://rsxeuflqdwoeohyvrlgp.supabase.co';
+export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJzeGV1ZmxxZHdvZW9oeXZybGdwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczNTQwNzEsImV4cCI6MjA5MjkzMDA3MX0.S4H5q5wqhjMj04Ovnalum48UCZTrzGLEon7Xcn2c99c';
 // ──────────────────────────────────────────────────────────────────────────────
 
 export const isSupabaseConfigured =

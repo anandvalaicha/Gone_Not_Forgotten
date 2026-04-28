@@ -8,7 +8,7 @@ import {
   TextInput,
   Platform,
 } from "react-native";
-import { Camera } from "expo-camera";
+import { CameraView, Camera } from "expo-camera";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { Colors } from "../theme/colors";
 import AppLogo from "../components/AppLogo";
@@ -147,12 +147,12 @@ export default function QRScannerScreen({ navigation }) {
         <Text style={styles.heading}>Scan Profile QR</Text>
       </View>
       <View style={styles.scannerBox}>
-        <Camera
+        <CameraView
           style={StyleSheet.absoluteFillObject}
-          type={Camera.Constants.Type.back}
-          onBarCodeScanned={scanned ? undefined : handleBarCodeScanned}
-          barCodeScannerSettings={{
-            barCodeTypes: ["qr"],
+          facing="back"
+          onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
+          barcodeScannerSettings={{
+            barcodeTypes: ["qr"],
           }}
         />
       </View>

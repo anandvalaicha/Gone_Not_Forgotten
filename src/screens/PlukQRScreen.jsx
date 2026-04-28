@@ -15,7 +15,9 @@ import {
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
-import * as FileSystem from "expo-file-system";
+// expo-file-system v19 split the API. Use legacy for writeAsStringAsync /
+// cacheDirectory / EncodingType.
+import * as FileSystem from "expo-file-system/legacy";
 import * as MediaLibrary from "expo-media-library";
 import QRCode from "react-native-qrcode-svg";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
@@ -103,7 +105,7 @@ export default function PlukQRScreen({ navigation }) {
   const uploadNewPhoto = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: "images",
         allowsEditing: false,
         quality: 0.7,
         allowsMultipleSelection: true,
@@ -118,7 +120,7 @@ export default function PlukQRScreen({ navigation }) {
   const uploadNewVideo = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+        mediaTypes: "videos",
         allowsEditing: false,
         quality: 0.7,
       });

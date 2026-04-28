@@ -12,11 +12,17 @@ import {
   Modal,
   ScrollView,
   Dimensions,
+  Platform,
+  useWindowDimensions,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
-import * as FileSystem from "expo-file-system";
+// expo-file-system v19 split the API. The legacy import still exposes the
+// classic cacheDirectory / documentDirectory / downloadAsync / copyAsync
+// helpers that this screen relies on for staging picked media.
+import * as FileSystem from "expo-file-system/legacy";
+import * as MediaLibrary from "expo-media-library";
 import {
   useAudioPlayer,
   useAudioPlayerStatus,
@@ -78,6 +84,12 @@ const MEMORIALS_STORAGE_KEY = "gnf_memorials";
 
 function PhotoTile({ uri, style, tileStyle }) {
   const [broken, setBroken] = useState(false);
+
+  // Reset broken state whenever the URI changes (e.g. local → cloud URL after upload)
+  useEffect(() => {
+    setBroken(false);
+  }, [uri]);
+
   return (
     <View style={[tileStyle, { overflow: "hidden" }]}>
       {broken ? (
@@ -99,6 +111,147 @@ function PhotoTile({ uri, style, tileStyle }) {
     </View>
   );
 }
+
+// ── Instagram-style full-width media carousel ─────────────────────────────
+function MediaCarousel({ items, onVideoPress }) {
+  const [page, setPage] = useState(0);
+  const { width: screenW } = useWindowDimensions();
+  // feedList paddingHorizontal:16 × 2 = 32
+  const SLIDE_W = screenW - 32;
+
+  if (!items || items.length === 0) return null;
+
+  return (
+    <View style={{ position: "relative" }}>
+      <ScrollView
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        decelerationRate="fast"
+        snapToInterval={SLIDE_W}
+        snapToAlignment="start"
+        onMomentumScrollEnd={(e) => {
+          const idx = Math.round(e.nativeEvent.contentOffset.x / SLIDE_W);
+          setPage(Math.min(idx, items.length - 1));
+        }}
+        style={{ width: SLIDE_W }}
+      >
+        {items.map((item, i) =>
+          item.type === "photo" ? (
+            <PhotoTile
+              key={i}
+              uri={item.uri}
+              tileStyle={{ width: SLIDE_W, aspectRatio: 1 }}
+              style={{ width: SLIDE_W, height: SLIDE_W }}
+            />
+          ) : (
+            <TouchableOpacity
+              key={i}
+              activeOpacity={0.9}
+              onPress={() => onVideoPress(item.uri)}
+              style={{
+                width: SLIDE_W,
+                aspectRatio: 1,
+                backgroundColor: "#1c1c1e",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              <LinearGradient
+                colors={["#2c3e50", "#1c1c1e"]}
+                style={StyleSheet.absoluteFill}
+              />
+              <MaterialCommunityIcons
+                name="play-circle"
+                size={60}
+                color="rgba(255,255,255,0.9)"
+              />
+              <View style={carouselStyles.videoBadge}>
+                <MaterialCommunityIcons name="video" size={12} color="#fff" />
+                <Text style={carouselStyles.videoBadgeText}>Video</Text>
+              </View>
+            </TouchableOpacity>
+          ),
+        )}
+      </ScrollView>
+
+      {/* Count badge top-right */}
+      {items.length > 1 && (
+        <View style={carouselStyles.countBadge}>
+          <Text style={carouselStyles.countText}>
+            {page + 1}/{items.length}
+          </Text>
+        </View>
+      )}
+
+      {/* Dot indicators */}
+      {items.length > 1 && (
+        <View style={carouselStyles.dots}>
+          {items.map((_, i) => (
+            <View
+              key={i}
+              style={[
+                carouselStyles.dot,
+                i === page && carouselStyles.dotActive,
+              ]}
+            />
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+const carouselStyles = StyleSheet.create({
+  videoBadge: {
+    position: "absolute",
+    bottom: 12,
+    left: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  videoBadgeText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  countBadge: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    backgroundColor: "rgba(0,0,0,0.50)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  countText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  dots: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 5,
+    paddingVertical: 8,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#C0B7AC",
+  },
+  dotActive: {
+    backgroundColor: "#3d7a62",
+    width: 16,
+  },
+});
+// ─────────────────────────────────────────────────────────────────────────────
 
 function AudioBubble({ uri }) {
   useEffect(() => {
@@ -188,6 +341,9 @@ export default function HomeScreen({ navigation }) {
   const [draftAudios, setDraftAudios] = useState([]);
   const [videoModal, setVideoModal] = useState({ visible: false, uri: null });
 
+  // Prevents useFocusEffect from wiping upload results while an upload is in progress
+  const uploadInProgress = useRef(false);
+
   const user = authService.getCurrentUser();
   const userId = user?.uid;
   const displayName =
@@ -205,18 +361,18 @@ export default function HomeScreen({ navigation }) {
           m.description?.toLowerCase().includes(q),
       );
     }
-    // Sort the filtered results
-    filtered.sort((a, b) => {
+    return [...filtered].sort((a, b) => {
+      const aDate = a.createdAt ?? a.created_at;
+      const bDate = b.createdAt ?? b.created_at;
       if (sortBy === "newest") {
-        return new Date(b.createdAt) - new Date(a.createdAt);
+        return new Date(bDate) - new Date(aDate);
       } else if (sortBy === "oldest") {
-        return new Date(a.createdAt) - new Date(b.createdAt);
+        return new Date(aDate) - new Date(bDate);
       } else if (sortBy === "alphabetical") {
         return a.title.localeCompare(b.title);
       }
       return 0;
     });
-    return filtered;
   }, [memorials, searchQuery, sortBy]);
 
   const loadMemorials = async () => {
@@ -237,8 +393,39 @@ export default function HomeScreen({ navigation }) {
     if (!userId) return;
     setLoading(true);
     const result = await memorialService.getUserMemorials(userId);
+    console.log(
+      "[loadMemorials] success:",
+      result.success,
+      "count:",
+      result.memorials?.length ?? "n/a",
+    );
+    if (result.memorials?.[0]) {
+      const m = result.memorials[0];
+      console.log(
+        "[loadMemorials] first memorial:",
+        m.id,
+        "photos:",
+        m.photos?.length ?? 0,
+        "videos:",
+        m.videos?.length ?? 0,
+        "audios:",
+        m.audios?.length ?? 0,
+      );
+    }
     if (result.success) {
-      setMemorials(result.memorials);
+      // Strip blob: / ph:// URIs from DB data — they are temporary browser/device
+      // handles that crash iOS when React Native tries to load them as images.
+      const isCloudUri = (uri) =>
+        typeof uri === "string" &&
+        !uri.startsWith("blob:") &&
+        !uri.startsWith("ph://");
+      const cleaned = result.memorials.map((m) => ({
+        ...m,
+        photos: (m.photos || []).filter(isCloudUri),
+        videos: (m.videos || []).filter(isCloudUri),
+        audios: (m.audios || []).filter(isCloudUri),
+      }));
+      setMemorials(cleaned);
     } else {
       Alert.alert("Error", result.error || "Could not load memorials");
     }
@@ -249,10 +436,10 @@ export default function HomeScreen({ navigation }) {
     loadMemorials();
   }, [userId]);
 
-  // Reload when navigating back to this screen
+  // Reload when navigating back to this screen (skip during active uploads)
   useFocusEffect(
     useCallback(() => {
-      loadMemorials();
+      if (!uploadInProgress.current) loadMemorials();
     }, [userId]),
   );
 
@@ -266,12 +453,71 @@ export default function HomeScreen({ navigation }) {
     }
   }, [memorials]);
 
-  // Convert blob: URIs (returned by Expo Go picker) to local file:// URIs
-  const resolveBlobUri = async (uri, ext = "jpg") => {
-    if (!uri.startsWith("blob:")) return uri;
-    const dest = `${FileSystem.cacheDirectory}picked_${Date.now()}.${ext}`;
-    const { uri: localUri } = await FileSystem.downloadAsync(uri, dest);
-    return localUri;
+  // Resolve picker URIs to a stable, uploadable file:// URI.
+  // - ph:// (iOS PHAsset)  → file:// via expo-media-library
+  // - blob:               → file:// via download to cache (native only)
+  // - file:// in demo     → copied to documentDirectory for persistence
+  // On web all URIs (blob:, data:, etc.) are passed through unchanged;
+  // storageService handles them via fetch() → blob → Supabase SDK.
+  const resolveAndPersistUri = async (uri, ext = "jpg") => {
+    if (Platform.OS === "web") return uri;
+
+    let resolved = uri;
+    console.log("[resolveAndPersistUri] input uri:", uri.slice(0, 100));
+
+    // 0. Convert ph:// (iOS Photos framework) → file:// via MediaLibrary
+    if (resolved.startsWith("ph://")) {
+      try {
+        const assetId = resolved.replace("ph://", "").split("/")[0];
+        const info = await MediaLibrary.getAssetInfoAsync(assetId);
+        if (info?.localUri) {
+          resolved = info.localUri;
+          console.log(
+            "[resolveAndPersistUri] ph:// → localUri:",
+            resolved.slice(0, 100),
+          );
+        } else {
+          console.warn(
+            "[resolveAndPersistUri] ph:// has no localUri — keeping as-is",
+          );
+        }
+      } catch (e) {
+        console.warn(
+          "[resolveAndPersistUri] ph:// resolution failed:",
+          e.message,
+        );
+      }
+    }
+
+    // 1. Convert blob: → file:// via download (web only — iOS never returns blob:)
+    if (resolved.startsWith("blob:") && Platform.OS === "web") {
+      const tmp = `${FileSystem.cacheDirectory}picked_${Date.now()}.${ext}`;
+      const { uri: localUri } = await FileSystem.downloadAsync(resolved, tmp);
+      resolved = localUri;
+    }
+
+    // 2. In demo mode: copy file:// to documentDirectory so it survives restarts
+    if (!isSupabaseConfigured && resolved.startsWith("file://")) {
+      const filename = `gnf_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+      const dest = `${FileSystem.documentDirectory}${filename}`;
+      try {
+        await FileSystem.copyAsync({ from: resolved, to: dest });
+        console.log(
+          "[resolveAndPersistUri] copied to documentDirectory:",
+          dest,
+        );
+        return dest;
+      } catch (e) {
+        console.warn(
+          "[resolveAndPersistUri] copyAsync failed, using original:",
+          e.message,
+        );
+        return resolved;
+      }
+    }
+
+    console.log("[resolveAndPersistUri] returning:", resolved.slice(0, 100));
+    return resolved;
   };
 
   const pickDraftMedia = async (mediaType) => {
@@ -309,7 +555,7 @@ export default function HomeScreen({ navigation }) {
         // Resolve any blob: URIs to local file:// URIs
         const uris = await Promise.all(
           result.assets.map((a) =>
-            resolveBlobUri(a.uri, mediaType === "photos" ? "jpg" : "mp4"),
+            resolveAndPersistUri(a.uri, mediaType === "photos" ? "jpg" : "mp4"),
           ),
         );
         if (mediaType === "photos") {
@@ -361,93 +607,110 @@ export default function HomeScreen({ navigation }) {
       return;
     }
     setLoading(true);
+    uploadInProgress.current = true;
 
-    // Step 1 — create DB record
-    const createResult = await memorialService.createMemorial(userId, {
-      title,
-      description,
-      visibility: "public",
-      photos: [],
-      videos: [],
-      audios: [],
-    });
-    if (!createResult.success) {
-      Alert.alert("Error", createResult.error || "Could not create memorial");
-      setLoading(false);
-      return;
-    }
+    try {
+      // Capture drafts before any state changes
+      const photosToUpload = [...draftPhotos];
+      const videosToUpload = [...draftVideos];
+      const audiosToUpload = [...draftAudios];
 
-    const memorialId = createResult.id;
-
-    // Capture drafts before modal reset clears them
-    const photosToUpload = [...draftPhotos];
-    const videosToUpload = [...draftVideos];
-    const audiosToUpload = [...draftAudios];
-
-    // Step 2 — show memorial immediately with local URIs (optimistic)
-    const optimistic = {
-      id: memorialId,
-      title,
-      description,
-      visibility: "public",
-      created_at: new Date().toISOString(),
-      photos: photosToUpload,
-      videos: videosToUpload,
-      audios: audiosToUpload.map((a) => a.uri ?? a),
-    };
-    setMemorials((cur) => [optimistic, ...cur]);
-    resetModal(); // Close the modal right away — uploads continue in background
-    setLoading(false);
-
-    // Step 3 — upload every picked file to Supabase Storage
-    const uploadOne = async (uri, mediaKind) => {
-      const ext =
-        uri.split(".").pop().split("?")[0] ||
-        (mediaKind === "photos"
-          ? "jpg"
-          : mediaKind === "videos"
-            ? "mp4"
-            : "mp3");
-      const fileName = `${mediaKind}-${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2)}.${ext}`;
-      const res = await storageService.uploadFile(
-        uri,
-        fileName,
-        `memorials/${memorialId}`,
-      );
-      if (!res.success) console.warn(`[upload] failed for ${uri}:`, res.error);
-      return res.success ? res.url : null;
-    };
-
-    const [photoUrls, videoUrls, audioUrls] = await Promise.all([
-      Promise.all(photosToUpload.map((uri) => uploadOne(uri, "photos"))),
-      Promise.all(videosToUpload.map((uri) => uploadOne(uri, "videos"))),
-      Promise.all(audiosToUpload.map((a) => uploadOne(a.uri ?? a, "audios"))),
-    ]);
-
-    const cleanPhotos = photoUrls.filter(Boolean);
-    const cleanVideos = videoUrls.filter(Boolean);
-    const cleanAudios = audioUrls.filter(Boolean);
-
-    // Step 4 — patch DB with cloud URLs and reload to reflect them
-    if (cleanPhotos.length || cleanVideos.length || cleanAudios.length) {
-      await memorialService.updateMemorial(memorialId, {
-        photos: cleanPhotos,
-        videos: cleanVideos,
-        audios: cleanAudios,
+      // Step 1 — create DB record first (empty media arrays; filled after upload)
+      const createResult = await memorialService.createMemorial(userId, {
+        title,
+        description,
+        visibility: "public",
+        photos: [],
+        videos: [],
+        audios: [],
       });
-      await loadMemorials(); // Replace optimistic local URIs with cloud URLs
-    }
+      if (!createResult.success) {
+        Alert.alert(
+          "Could not create memorial",
+          createResult.error || "Please check your connection and try again.",
+        );
+        return;
+      }
 
-    const total = photoUrls.length + videoUrls.length + audioUrls.length;
-    const failed =
-      total - (cleanPhotos.length + cleanVideos.length + cleanAudios.length);
-    if (failed > 0) {
-      Alert.alert(
-        failed === total ? "Upload Failed" : "Partial Upload",
-        `${failed} of ${total} file(s) could not be saved to cloud. They are visible now but may not appear after restarting the app.`,
-      );
+      const memorialId = createResult.id;
+      const uploadErrors = [];
+
+      // Step 2 — upload files to Supabase Storage
+      const uploadOne = async (uri, mediaKind) => {
+        const rawExt = uri.split(".").pop().split("?")[0].toLowerCase();
+        // blob: and data: URIs have no real extension — use fallback
+        const ext =
+          (rawExt.length <= 5 ? rawExt : null) ||
+          (mediaKind === "photos"
+            ? "jpg"
+            : mediaKind === "videos"
+              ? "mp4"
+              : "mp3");
+        const fileName = `${mediaKind}-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+        const res = await storageService.uploadFile(uri, fileName, memorialId);
+        if (!res.success) {
+          uploadErrors.push(res.error || "Unknown upload error");
+          console.warn(
+            `[createMemorial] ${mediaKind} upload failed:`,
+            res.error,
+          );
+        }
+        return res.success ? res.url : null;
+      };
+
+      const [photoUrls, videoUrls, audioUrls] = await Promise.all([
+        Promise.all(photosToUpload.map((uri) => uploadOne(uri, "photos"))),
+        Promise.all(videosToUpload.map((uri) => uploadOne(uri, "videos"))),
+        Promise.all(audiosToUpload.map((a) => uploadOne(a.uri ?? a, "audios"))),
+      ]);
+
+      const cleanPhotos = photoUrls.filter(Boolean);
+      const cleanVideos = videoUrls.filter(Boolean);
+      const cleanAudios = audioUrls.filter(Boolean);
+
+      // Step 3 — persist cloud URLs back to DB
+      if (cleanPhotos.length || cleanVideos.length || cleanAudios.length) {
+        const upd = await memorialService.updateMemorial(memorialId, {
+          photos: cleanPhotos,
+          videos: cleanVideos,
+          audios: cleanAudios,
+        });
+        if (!upd.success)
+          console.warn("[createMemorial] DB update failed:", upd.error);
+      }
+
+      // Step 4 — add to local state so it appears immediately
+      setMemorials((cur) => [
+        {
+          id: memorialId,
+          title,
+          description,
+          visibility: "public",
+          created_at: new Date().toISOString(),
+          photos: cleanPhotos,
+          videos: cleanVideos,
+          audios: cleanAudios,
+        },
+        ...cur,
+      ]);
+      resetModal();
+
+      const total =
+        photosToUpload.length + videosToUpload.length + audiosToUpload.length;
+      const failed =
+        total - (cleanPhotos.length + cleanVideos.length + cleanAudios.length);
+      if (failed > 0) {
+        Alert.alert(
+          failed === total ? "Media Upload Failed" : "Partial Upload",
+          uploadErrors[0] ||
+            `${failed} of ${total} file(s) could not be uploaded.\n\nCheck that the Supabase "memorials" storage bucket exists and has upload policies enabled.`,
+        );
+      }
+    } catch (error) {
+      Alert.alert("Error", error.message || "Could not save memorial");
+    } finally {
+      uploadInProgress.current = false;
+      setLoading(false);
     }
   };
 
@@ -478,61 +741,76 @@ export default function HomeScreen({ navigation }) {
           quality: 0.8,
         });
         if (pickerResult.canceled || !pickerResult.assets?.[0]?.uri) return;
-        // Resolve blob: URIs → file:// so Image can render and upload can read
         const ext = mediaType === "photos" ? "jpg" : "mp4";
-        fileUri = await resolveBlobUri(pickerResult.assets[0].uri, ext);
+        fileUri = await resolveAndPersistUri(pickerResult.assets[0].uri, ext);
       }
 
-      // Show media immediately in the card (optimistic UI)
-      setMemorials((cur) =>
-        cur.map((m) =>
-          m.id === memorialId
-            ? { ...m, [mediaType]: [...(m[mediaType] || []), fileUri] }
-            : m,
-        ),
-      );
+      // Demo mode — just show the local URI, no cloud upload
+      if (!isSupabaseConfigured) {
+        setMemorials((cur) =>
+          cur.map((m) =>
+            m.id === memorialId
+              ? { ...m, [mediaType]: [...(m[mediaType] || []), fileUri] }
+              : m,
+          ),
+        );
+        return;
+      }
 
-      if (!isSupabaseConfigured) return; // demo mode — local URI is enough
-
+      // Supabase mode — upload first, then add cloud URL to state
       setLoading(true);
+      uploadInProgress.current = true;
+      const rawExt = fileUri.split(".").pop().split("?")[0];
+      // blob: and data: URIs have no real extension — use fallback
       const extension =
-        fileUri.split(".").pop().split("?")[0] ||
+        (rawExt.length <= 5 ? rawExt : null) ||
         (mediaType === "photos"
           ? "jpg"
           : mediaType === "videos"
             ? "mp4"
             : "mp3");
       const uniqueFileName = `${memorialId}-${Date.now()}.${extension}`;
+      console.log(
+        "[uploadMedia] uploading",
+        mediaType,
+        "file:",
+        fileUri.slice(0, 100),
+      );
       const uploadResult = await storageService.uploadFile(
         fileUri,
         uniqueFileName,
-        `memorials/${memorialId}`,
+        memorialId,
       );
       if (!uploadResult.success) {
         Alert.alert(
           "Upload failed",
           uploadResult.error ||
-            "Could not upload to cloud. Media is visible locally but may not persist after restart.",
+            "Could not upload to cloud.\n\nMake sure the Supabase 'memorials' storage bucket exists and has upload policies enabled.",
         );
         return;
       }
+
+      // Persist cloud URL to DB, then update local state
       const appendResult = await memorialService.appendMedia(
         memorialId,
         mediaType,
         uploadResult.url,
       );
       if (!appendResult.success) {
-        Alert.alert(
-          "Save failed",
-          appendResult.error ||
-            "File uploaded but could not be saved to memory.",
-        );
-      } else {
-        await loadMemorials(); // Replace local URI with Supabase URL
+        console.warn("[uploadMedia] appendMedia failed:", appendResult.error);
       }
+
+      setMemorials((cur) =>
+        cur.map((m) =>
+          m.id === memorialId
+            ? { ...m, [mediaType]: [...(m[mediaType] || []), uploadResult.url] }
+            : m,
+        ),
+      );
     } catch (error) {
       Alert.alert("Error", error.message || "Could not upload media");
     } finally {
+      uploadInProgress.current = false;
       setLoading(false);
     }
   };
@@ -551,159 +829,29 @@ export default function HomeScreen({ navigation }) {
     const month = MONTHS[date.getMonth()];
     const fullDate = `${month} ${getOrdinal(day)}, ${date.getFullYear()}`;
 
-    // Build a unified media grid: photos first, then video tiles
     const photos = item.photos || [];
     const videos = item.videos || [];
     const audios = item.audios || [];
 
-    // Instagram-style media grid
-    const renderMediaGrid = () => {
-      const totalMedia = photos.length + videos.length;
-      if (totalMedia === 0) return null;
-
-      // Single photo — 4:3 landscape
-      if (totalMedia === 1 && photos.length === 1) {
-        return <PhotoTile uri={photos[0]} tileStyle={styles.mediaSingle} />;
-      }
-
-      // Single video — 4:3 landscape tile
-      if (totalMedia === 1 && videos.length === 1) {
-        return (
-          <TouchableOpacity
-            activeOpacity={0.9}
-            style={styles.mediaSingleVideo}
-            onPress={() => setVideoModal({ visible: true, uri: videos[0] })}
-          >
-            <LinearGradient
-              colors={["#2c3e50", "#1c1c1e"]}
-              style={[StyleSheet.absoluteFill, styles.videoTileBg]}
-            >
-              <MaterialCommunityIcons
-                name="play-circle"
-                size={52}
-                color="rgba(255,255,255,0.9)"
-              />
-            </LinearGradient>
-            <View style={styles.videoTileBadge}>
-              <MaterialCommunityIcons name="video" size={11} color="#fff" />
-            </View>
-          </TouchableOpacity>
-        );
-      }
-
-      // 2 items — side by side 1:1
-      if (totalMedia === 2) {
-        const items = [
-          ...photos.map((u) => ({ type: "photo", uri: u })),
-          ...videos.map((u) => ({ type: "video", uri: u })),
-        ];
-        return (
-          <View style={styles.mediaRow2}>
-            {items.map((m, i) =>
-              m.type === "photo" ? (
-                <PhotoTile key={i} uri={m.uri} tileStyle={styles.mediaHalf} />
-              ) : (
-                <TouchableOpacity
-                  key={i}
-                  style={styles.mediaHalf}
-                  activeOpacity={0.9}
-                  onPress={() => setVideoModal({ visible: true, uri: m.uri })}
-                >
-                  <LinearGradient
-                    colors={["#2c3e50", "#1c1c1e"]}
-                    style={[StyleSheet.absoluteFill, styles.videoTileBg]}
-                  >
-                    <MaterialCommunityIcons
-                      name="play-circle"
-                      size={36}
-                      color="rgba(255,255,255,0.9)"
-                    />
-                  </LinearGradient>
-                  <View style={styles.videoTileBadge}>
-                    <MaterialCommunityIcons
-                      name="video"
-                      size={11}
-                      color="#fff"
-                    />
-                  </View>
-                </TouchableOpacity>
-              ),
-            )}
-          </View>
-        );
-      }
-
-      // 3+ items — Instagram 3-column grid, first item taller on left
-      const allItems = [
-        ...photos.map((u) => ({ type: "photo", uri: u })),
-        ...videos.map((u) => ({ type: "video", uri: u })),
-      ];
-      const shown = allItems.slice(0, 3);
-      const extra = totalMedia - 3;
-
-      const renderTile = (m, i, style) => {
-        if (m.type === "photo") {
-          return <PhotoTile key={i} uri={m.uri} tileStyle={style} />;
-        }
-        return (
-          <TouchableOpacity
-            key={i}
-            style={style}
-            activeOpacity={0.9}
-            onPress={() => setVideoModal({ visible: true, uri: m.uri })}
-          >
-            <LinearGradient
-              colors={["#2c3e50", "#1c1c1e"]}
-              style={[StyleSheet.absoluteFill, styles.videoTileBg]}
-            >
-              <MaterialCommunityIcons
-                name="play-circle"
-                size={i === 0 ? 42 : 30}
-                color="rgba(255,255,255,0.9)"
-              />
-            </LinearGradient>
-            <View style={styles.videoTileBadge}>
-              <MaterialCommunityIcons name="video" size={11} color="#fff" />
-            </View>
-          </TouchableOpacity>
-        );
-      };
-
-      return (
-        <View style={styles.mediaGrid3}>
-          {/* Left: large tile */}
-          {renderTile(shown[0], 0, styles.mediaGrid3Left)}
-          {/* Right: two stacked tiles */}
-          <View style={styles.mediaGrid3Right}>
-            {shown[1] && renderTile(shown[1], 1, styles.mediaGrid3SmallTop)}
-            {shown[2] && (
-              <View style={styles.mediaGrid3SmallBottom}>
-                {renderTile(shown[2], 2, StyleSheet.absoluteFill)}
-                {extra > 0 && (
-                  <View style={styles.mediaGridMoreOverlay}>
-                    <Text style={styles.mediaGridMoreText}>+{extra}</Text>
-                  </View>
-                )}
-              </View>
-            )}
-          </View>
-        </View>
-      );
-    };
+    const mediaItems = [
+      ...photos.map((uri) => ({ type: "photo", uri })),
+      ...videos.map((uri) => ({ type: "video", uri })),
+    ];
 
     return (
       <View style={styles.memoryCard}>
-        {/* Card header */}
+        {/* Instagram-style header: avatar + name + date + chevron */}
         <View style={styles.cardHeader}>
-          <View style={styles.dateBadge}>
-            <Text style={styles.dateBadgeDay}>{getOrdinal(day)}</Text>
-            <Text style={styles.dateBadgeMonth}>{month}</Text>
+          <View style={styles.personAvatar}>
+            <Text style={styles.personAvatarText}>
+              {item.title?.[0]?.toUpperCase() || "?"}
+            </Text>
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.memoryDateText}>{fullDate}</Text>
+          <View style={{ flex: 1, marginLeft: 10 }}>
             <Text style={styles.memoryTitle} numberOfLines={1}>
               {item.title}
             </Text>
+            <Text style={styles.memoryDateText}>{fullDate}</Text>
           </View>
           <TouchableOpacity
             style={styles.cardDetailBtn}
@@ -719,8 +867,23 @@ export default function HomeScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* Full-width media grid */}
-        {renderMediaGrid()}
+        {/* Full-width swipeable media carousel */}
+        {mediaItems.length > 0 && (
+          <MediaCarousel
+            items={mediaItems}
+            onVideoPress={(uri) => setVideoModal({ visible: true, uri })}
+          />
+        )}
+
+        {/* Instagram-style caption: bold name + description */}
+        {!!item.description && (
+          <View style={styles.cardCaption}>
+            <Text style={styles.captionText} numberOfLines={4}>
+              <Text style={styles.captionName}>{item.title} </Text>
+              {item.description}
+            </Text>
+          </View>
+        )}
 
         {/* Audio players */}
         {audios.length > 0 && (
@@ -737,16 +900,7 @@ export default function HomeScreen({ navigation }) {
           </View>
         )}
 
-        {/* Caption */}
-        {!!item.description && (
-          <View style={styles.cardCaption}>
-            <Text style={styles.memoryDescription} numberOfLines={3}>
-              {item.description}
-            </Text>
-          </View>
-        )}
-
-        {/* Action buttons */}
+        {/* Action bar — add more media */}
         <View style={styles.cardActions}>
           <TouchableOpacity
             style={styles.mediaActionBtn}
@@ -755,7 +909,7 @@ export default function HomeScreen({ navigation }) {
           >
             <MaterialCommunityIcons
               name="image-plus"
-              size={13}
+              size={14}
               color={Colors.green700}
             />
             <Text style={styles.mediaActionText}>Photo</Text>
@@ -767,7 +921,7 @@ export default function HomeScreen({ navigation }) {
           >
             <MaterialCommunityIcons
               name="video-plus-outline"
-              size={13}
+              size={14}
               color={Colors.green700}
             />
             <Text style={styles.mediaActionText}>Video</Text>
@@ -779,7 +933,7 @@ export default function HomeScreen({ navigation }) {
           >
             <MaterialCommunityIcons
               name="microphone-plus"
-              size={13}
+              size={14}
               color={Colors.green700}
             />
             <Text style={styles.mediaActionText}>Audio</Text>
@@ -1095,7 +1249,7 @@ export default function HomeScreen({ navigation }) {
                 disabled={loading}
               >
                 <Text style={styles.buttonText}>
-                  {loading ? "Saving..." : "Save Memory"}
+                  {loading ? "Uploading..." : "Save Memory"}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.cancelBtn} onPress={resetModal}>
@@ -1253,115 +1407,34 @@ const styles = StyleSheet.create({
   cardDetailBtn: {
     padding: 4,
   },
-  dateBadge: {
-    width: 44,
+  personAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     backgroundColor: Colors.green700,
-    borderRadius: 10,
-    alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 10,
-    alignSelf: "flex-start",
+    alignItems: "center",
   },
-  dateBadgeDay: {
+  personAvatarText: {
     color: Colors.white,
     fontWeight: "700",
-    fontSize: 13,
-  },
-  dateBadgeMonth: {
-    color: Colors.green100,
-    fontSize: 11,
-    marginTop: 2,
+    fontSize: 16,
   },
   memoryDateText: {
     fontSize: 12,
     color: Colors.ink500,
-    marginBottom: 2,
+    marginTop: 1,
   },
   memoryTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "700",
     color: Colors.ink700,
   },
-  // ── Media grid ───────────────────────────────────────
-  mediaSingle: {
-    width: "100%",
-    aspectRatio: 4 / 3,
-    overflow: "hidden",
-  },
+  // ── Broken image placeholder (used by PhotoTile) ─────
   brokenImageTile: {
     backgroundColor: "#1c1c1e",
     justifyContent: "center",
     alignItems: "center",
-  },
-  mediaSingleVideo: {
-    width: "100%",
-    aspectRatio: 4 / 3,
-    backgroundColor: "#1c1c1e",
-    overflow: "hidden",
-  },
-  mediaRow2: {
-    flexDirection: "row",
-    gap: 2,
-    height: 200,
-  },
-  mediaHalf: {
-    flex: 1,
-    backgroundColor: "#1c1c1e",
-    overflow: "hidden",
-  },
-  mediaGrid3: {
-    flexDirection: "row",
-    gap: 2,
-    height: 220,
-  },
-  mediaGrid3Left: {
-    flex: 2,
-    backgroundColor: "#1c1c1e",
-    overflow: "hidden",
-  },
-  mediaGrid3Right: {
-    flex: 1,
-    gap: 2,
-  },
-  mediaGrid3SmallTop: {
-    flex: 1,
-    backgroundColor: "#1c1c1e",
-    overflow: "hidden",
-  },
-  mediaGrid3SmallBottom: {
-    flex: 1,
-    backgroundColor: "#1c1c1e",
-    overflow: "hidden",
-    position: "relative",
-  },
-  mediaGridMoreOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  mediaGridMoreText: {
-    color: "#fff",
-    fontSize: 22,
-    fontWeight: "700",
-  },
-  // ── Video tile overlays ───────────────────────────────
-  videoTileBg: {
-    backgroundColor: "#1c1c1e",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  videoTileBadge: {
-    position: "absolute",
-    bottom: 6,
-    left: 6,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    borderRadius: 4,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
   },
   // ── Audio section ─────────────────────────────────────
   cardAudioSection: {
@@ -1372,11 +1445,17 @@ const styles = StyleSheet.create({
   // ── Caption ───────────────────────────────────────────
   cardCaption: {
     paddingHorizontal: 14,
-    paddingTop: 10,
+    paddingTop: 8,
+    paddingBottom: 2,
   },
-  memoryDescription: {
+  captionName: {
     fontSize: 14,
-    color: Colors.ink500,
+    fontWeight: "700",
+    color: Colors.ink700,
+  },
+  captionText: {
+    fontSize: 14,
+    color: Colors.ink700,
     lineHeight: 20,
   },
   // ── Action buttons ────────────────────────────────────

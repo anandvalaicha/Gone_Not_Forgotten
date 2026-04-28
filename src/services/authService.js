@@ -27,6 +27,9 @@ const normalizeUser = (supabaseUser) => {
       supabaseUser.user_metadata?.full_name ||
       supabaseUser.email?.split('@')[0]?.replace(/[._]/g, ' ') ||
       'User',
+    bio: supabaseUser.user_metadata?.bio || '',
+    birthYear: supabaseUser.user_metadata?.birth_year || '',
+    deathYear: supabaseUser.user_metadata?.death_year || '',
   };
 };
 
@@ -99,7 +102,7 @@ export const authService = {
     }
 
     // ── Step 1: Remove the auth token key directly (exact key from storage) ──
-    const AUTH_STORAGE_KEY = 'sb-usphkmetleulwsrqcijc-auth-token';
+    const AUTH_STORAGE_KEY = 'sb-rsxeuflqdwoeohyvrlgp-auth-token';
     try {
       const before = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
       console.log('[SignOut] token key exists before removal:', before !== null);
@@ -147,12 +150,12 @@ export const authService = {
       notifyDemoAuthListeners();
       return { success: true, user: demoSessionUser };
     }
-    const { data: updated, error } = await supabase.auth.updateUser({
-      data: {
-        display_name: data.displayName,
-        photo_url: data.photoURL,
-      },
-    });
+    const metaUpdate = { display_name: data.displayName };
+    if (data.photoURL !== undefined) metaUpdate.photo_url = data.photoURL;
+    if (data.bio !== undefined) metaUpdate.bio = data.bio;
+    if (data.birthYear !== undefined) metaUpdate.birth_year = data.birthYear;
+    if (data.deathYear !== undefined) metaUpdate.death_year = data.deathYear;
+    const { data: updated, error } = await supabase.auth.updateUser({ data: metaUpdate });
     if (error) return { success: false, error: error.message };
     const user = normalizeUser(updated.user);
     currentUser = user;

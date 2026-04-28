@@ -653,7 +653,3 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 });
-// </content>
-<parameter name="filePath">
-  /Users/anandvalaicha/GoneNotForgotten/src/screens/UserProfileScreen.jsx
-</parameter>;

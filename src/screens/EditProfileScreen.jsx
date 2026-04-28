@@ -32,7 +32,12 @@ export default function EditProfileScreen({ navigation, route }) {
     }
 
     setSaving(true);
-    const result = await authService.updateUserProfile({ displayName: name });
+    const result = await authService.updateUserProfile({
+      displayName: name,
+      bio: bio.trim(),
+      birthYear: birthYear.trim(),
+      deathYear: deathYear.trim(),
+    });
     setSaving(false);
 
     if (!result.success) {

@@ -34,7 +34,8 @@
         {
           "photosPermission": "$(PRODUCT_NAME) needs access to your photos and videos to add memories."
         }
-      ]
+      ],
+      "expo-asset"
     ]
   }
 }
