@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useCallback, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -11,12 +11,25 @@ import {
   Image,
   Modal,
   ScrollView,
+  Dimensions,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
-import { isFirebaseConfigured } from "../config/firebase";
+import * as FileSystem from "expo-file-system";
+import {
+  useAudioPlayer,
+  useAudioPlayerStatus,
+  setAudioModeAsync,
+} from "expo-audio";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import { LinearGradient } from "expo-linear-gradient";
+import VideoPlayerModal from "../components/VideoPlayerModal";
+import { useFocusEffect } from "@react-navigation/native";
+import { isSupabaseConfigured } from "../config/supabase";
 import { memorialService, authService, storageService } from "../services";
 import { Colors } from "../theme/colors";
+import AppLogo from "../components/AppLogo";
 
 const DEMO_MEMORIALS = [
   {
@@ -59,11 +72,112 @@ function getOrdinal(n) {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
+const MEMORIALS_STORAGE_KEY = "gnf_memorials";
+
+// ─── Top-level components (must be outside HomeScreen to avoid remounting) ───
+
+function PhotoTile({ uri, style, tileStyle }) {
+  const [broken, setBroken] = useState(false);
+  return (
+    <View style={[tileStyle, { overflow: "hidden" }]}>
+      {broken ? (
+        <View style={[StyleSheet.absoluteFill, styles.brokenImageTile]}>
+          <MaterialCommunityIcons
+            name="image-broken-variant"
+            size={28}
+            color="rgba(255,255,255,0.35)"
+          />
+        </View>
+      ) : (
+        <Image
+          source={{ uri }}
+          style={style || StyleSheet.absoluteFill}
+          resizeMode="cover"
+          onError={() => setBroken(true)}
+        />
+      )}
+    </View>
+  );
+}
+
+function AudioBubble({ uri }) {
+  useEffect(() => {
+    setAudioModeAsync({ playsInSilentModeIOS: true }).catch(() => {});
+  }, []);
+
+  const player = useAudioPlayer({ uri });
+  const status = useAudioPlayerStatus(player);
+
+  const toggle = () => {
+    if (status.playing) {
+      player.pause();
+    } else {
+      const atEnd =
+        status.currentTime >= (status.duration || 0) - 0.1 &&
+        status.duration > 0;
+      if (atEnd) player.seekTo(0);
+      player.play();
+    }
+  };
+
+  const positionMs = (status.currentTime || 0) * 1000;
+  const durationMs = (status.duration || 0) * 1000;
+  const progress = durationMs > 0 ? positionMs / durationMs : 0;
+
+  const fmt = (ms) => {
+    const s = Math.floor((ms || 0) / 1000);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  };
+
+  // Natural-looking waveform — fixed heights so it never changes shape
+  const WAVE = [
+    0.3, 0.5, 0.7, 0.9, 0.6, 1.0, 0.8, 0.5, 0.7, 0.4, 0.9, 0.6, 0.8, 1.0, 0.5,
+    0.7, 0.9, 0.4, 0.6, 0.8, 0.5, 0.9, 0.7, 0.4, 0.8, 0.6, 1.0, 0.5,
+  ];
+
+  const displayTime =
+    positionMs > 0
+      ? fmt(positionMs)
+      : durationMs > 0
+        ? fmt(durationMs)
+        : "0:00";
+
+  return (
+    <View style={styles.audioBubble}>
+      <TouchableOpacity style={styles.audioBubbleBtn} onPress={toggle}>
+        <MaterialCommunityIcons
+          name={status.playing ? "pause" : "play"}
+          size={16}
+          color="#fff"
+          style={{ marginLeft: status.playing ? 0 : 2 }}
+        />
+      </TouchableOpacity>
+      <View style={styles.audioBubbleWave}>
+        {WAVE.map((h, i) => (
+          <View
+            key={i}
+            style={[
+              styles.audioBubbleBar,
+              { height: Math.max(3, h * 22) },
+              i / WAVE.length <= progress
+                ? styles.audioBubbleBarFilled
+                : styles.audioBubbleBarEmpty,
+            ]}
+          />
+        ))}
+      </View>
+      <Text style={styles.audioBubbleTime}>{displayTime}</Text>
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function HomeScreen({ navigation }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [memorials, setMemorials] = useState(
-    isFirebaseConfigured ? [] : DEMO_MEMORIALS,
+    isSupabaseConfigured ? [] : DEMO_MEMORIALS,
   );
   const [loading, setLoading] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -72,6 +186,7 @@ export default function HomeScreen({ navigation }) {
   const [draftPhotos, setDraftPhotos] = useState([]);
   const [draftVideos, setDraftVideos] = useState([]);
   const [draftAudios, setDraftAudios] = useState([]);
+  const [videoModal, setVideoModal] = useState({ visible: false, uri: null });
 
   const user = authService.getCurrentUser();
   const userId = user?.uid;
@@ -105,8 +220,18 @@ export default function HomeScreen({ navigation }) {
   }, [memorials, searchQuery, sortBy]);
 
   const loadMemorials = async () => {
-    if (!isFirebaseConfigured) {
-      setMemorials((cur) => (cur.length > 0 ? cur : DEMO_MEMORIALS));
+    if (!isSupabaseConfigured) {
+      try {
+        const stored = await AsyncStorage.getItem(MEMORIALS_STORAGE_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          setMemorials(parsed.length > 0 ? parsed : DEMO_MEMORIALS);
+        } else {
+          setMemorials(DEMO_MEMORIALS);
+        }
+      } catch {
+        setMemorials(DEMO_MEMORIALS);
+      }
       return;
     }
     if (!userId) return;
@@ -124,26 +249,69 @@ export default function HomeScreen({ navigation }) {
     loadMemorials();
   }, [userId]);
 
+  // Reload when navigating back to this screen
+  useFocusEffect(
+    useCallback(() => {
+      loadMemorials();
+    }, [userId]),
+  );
+
+  // Persist memorials to AsyncStorage whenever they change (demo / offline mode)
+  useEffect(() => {
+    if (!isSupabaseConfigured) {
+      AsyncStorage.setItem(
+        MEMORIALS_STORAGE_KEY,
+        JSON.stringify(memorials),
+      ).catch(() => {});
+    }
+  }, [memorials]);
+
+  // Convert blob: URIs (returned by Expo Go picker) to local file:// URIs
+  const resolveBlobUri = async (uri, ext = "jpg") => {
+    if (!uri.startsWith("blob:")) return uri;
+    const dest = `${FileSystem.cacheDirectory}picked_${Date.now()}.${ext}`;
+    const { uri: localUri } = await FileSystem.downloadAsync(uri, dest);
+    return localUri;
+  };
+
   const pickDraftMedia = async (mediaType) => {
     try {
       if (mediaType === "audios") {
+        // expo-document-picker v14+ API: { canceled, assets }
         const result = await DocumentPicker.getDocumentAsync({
           type: "audio/*",
+          copyToCacheDirectory: true,
         });
-        if (result.type !== "success") return;
-        setDraftAudios((cur) => [...cur, result.uri]);
+        if (result.canceled || !result.assets?.[0]?.uri) return;
+        setDraftAudios((cur) => [
+          ...cur,
+          { uri: result.assets[0].uri, name: result.assets[0].name },
+        ]);
       } else {
+        // Request permission before opening the picker
+        const { status } =
+          await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== "granted") {
+          Alert.alert(
+            "Permission needed",
+            "Please allow access to your photo library to add photos and videos.",
+          );
+          return;
+        }
+        // expo-image-picker v17+ uses string literals, not MediaTypeOptions
         const result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes:
-            mediaType === "photos"
-              ? ImagePicker.MediaTypeOptions.Images
-              : ImagePicker.MediaTypeOptions.Videos,
+          mediaTypes: mediaType === "photos" ? "images" : "videos",
           allowsEditing: false,
-          quality: 0.7,
+          quality: 0.8,
           allowsMultipleSelection: true,
         });
         if (result.canceled || !result.assets?.length) return;
-        const uris = result.assets.map((a) => a.uri);
+        // Resolve any blob: URIs to local file:// URIs
+        const uris = await Promise.all(
+          result.assets.map((a) =>
+            resolveBlobUri(a.uri, mediaType === "photos" ? "jpg" : "mp4"),
+          ),
+        );
         if (mediaType === "photos") {
           setDraftPhotos((cur) => [...cur, ...uris]);
         } else {
@@ -176,7 +344,7 @@ export default function HomeScreen({ navigation }) {
       Alert.alert("Validation", "Please fill in name and description.");
       return;
     }
-    if (!isFirebaseConfigured) {
+    if (!isSupabaseConfigured) {
       const local = {
         id: `local-${Date.now()}`,
         title,
@@ -186,79 +354,165 @@ export default function HomeScreen({ navigation }) {
         createdAt: new Date(),
         photos: draftPhotos,
         videos: draftVideos,
-        audios: draftAudios,
+        audios: draftAudios.map((a) => a.uri ?? a),
       };
       setMemorials((cur) => [local, ...cur]);
       resetModal();
       return;
     }
     setLoading(true);
-    const result = await memorialService.createMemorial(userId, {
+
+    // Step 1 — create DB record
+    const createResult = await memorialService.createMemorial(userId, {
       title,
       description,
       visibility: "public",
-      photos: draftPhotos,
-      videos: draftVideos,
-      audios: draftAudios,
+      photos: [],
+      videos: [],
+      audios: [],
     });
-    if (result.success) {
-      resetModal();
-      await loadMemorials();
-    } else {
-      Alert.alert("Error", result.error || "Could not create memorial");
+    if (!createResult.success) {
+      Alert.alert("Error", createResult.error || "Could not create memorial");
+      setLoading(false);
+      return;
     }
+
+    const memorialId = createResult.id;
+
+    // Capture drafts before modal reset clears them
+    const photosToUpload = [...draftPhotos];
+    const videosToUpload = [...draftVideos];
+    const audiosToUpload = [...draftAudios];
+
+    // Step 2 — show memorial immediately with local URIs (optimistic)
+    const optimistic = {
+      id: memorialId,
+      title,
+      description,
+      visibility: "public",
+      created_at: new Date().toISOString(),
+      photos: photosToUpload,
+      videos: videosToUpload,
+      audios: audiosToUpload.map((a) => a.uri ?? a),
+    };
+    setMemorials((cur) => [optimistic, ...cur]);
+    resetModal(); // Close the modal right away — uploads continue in background
     setLoading(false);
+
+    // Step 3 — upload every picked file to Supabase Storage
+    const uploadOne = async (uri, mediaKind) => {
+      const ext =
+        uri.split(".").pop().split("?")[0] ||
+        (mediaKind === "photos"
+          ? "jpg"
+          : mediaKind === "videos"
+            ? "mp4"
+            : "mp3");
+      const fileName = `${mediaKind}-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2)}.${ext}`;
+      const res = await storageService.uploadFile(
+        uri,
+        fileName,
+        `memorials/${memorialId}`,
+      );
+      if (!res.success) console.warn(`[upload] failed for ${uri}:`, res.error);
+      return res.success ? res.url : null;
+    };
+
+    const [photoUrls, videoUrls, audioUrls] = await Promise.all([
+      Promise.all(photosToUpload.map((uri) => uploadOne(uri, "photos"))),
+      Promise.all(videosToUpload.map((uri) => uploadOne(uri, "videos"))),
+      Promise.all(audiosToUpload.map((a) => uploadOne(a.uri ?? a, "audios"))),
+    ]);
+
+    const cleanPhotos = photoUrls.filter(Boolean);
+    const cleanVideos = videoUrls.filter(Boolean);
+    const cleanAudios = audioUrls.filter(Boolean);
+
+    // Step 4 — patch DB with cloud URLs and reload to reflect them
+    if (cleanPhotos.length || cleanVideos.length || cleanAudios.length) {
+      await memorialService.updateMemorial(memorialId, {
+        photos: cleanPhotos,
+        videos: cleanVideos,
+        audios: cleanAudios,
+      });
+      await loadMemorials(); // Replace optimistic local URIs with cloud URLs
+    }
+
+    const total = photoUrls.length + videoUrls.length + audioUrls.length;
+    const failed =
+      total - (cleanPhotos.length + cleanVideos.length + cleanAudios.length);
+    if (failed > 0) {
+      Alert.alert(
+        failed === total ? "Upload Failed" : "Partial Upload",
+        `${failed} of ${total} file(s) could not be saved to cloud. They are visible now but may not appear after restarting the app.`,
+      );
+    }
   };
 
   const uploadMedia = async (memorialId, mediaType) => {
     try {
-      let pickerResult;
+      let fileUri;
       if (mediaType === "audios") {
-        pickerResult = await DocumentPicker.getDocumentAsync({
+        const pickerResult = await DocumentPicker.getDocumentAsync({
           type: "audio/*",
-        });
-        if (pickerResult.type !== "success") return;
-      } else {
-        pickerResult = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes:
-            mediaType === "photos"
-              ? ImagePicker.MediaTypeOptions.Images
-              : ImagePicker.MediaTypeOptions.Videos,
-          allowsEditing: false,
-          quality: 0.7,
+          copyToCacheDirectory: true,
         });
         if (pickerResult.canceled || !pickerResult.assets?.[0]?.uri) return;
-        pickerResult = {
-          uri: pickerResult.assets[0].uri,
-          name: pickerResult.assets[0].uri.split("/").pop(),
-        };
+        fileUri = pickerResult.assets[0].uri;
+      } else {
+        // Request permission before opening picker
+        const { status } =
+          await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== "granted") {
+          Alert.alert(
+            "Permission needed",
+            "Please allow access to your photo library to add photos and videos.",
+          );
+          return;
+        }
+        const pickerResult = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: mediaType === "photos" ? "images" : "videos",
+          allowsEditing: false,
+          quality: 0.8,
+        });
+        if (pickerResult.canceled || !pickerResult.assets?.[0]?.uri) return;
+        // Resolve blob: URIs → file:// so Image can render and upload can read
+        const ext = mediaType === "photos" ? "jpg" : "mp4";
+        fileUri = await resolveBlobUri(pickerResult.assets[0].uri, ext);
       }
-      const fileUri = pickerResult.uri;
 
-      // Demo mode — Firebase not connected, use local URI directly
-      if (!isFirebaseConfigured) {
-        setMemorials((cur) =>
-          cur.map((m) =>
-            m.id === memorialId
-              ? { ...m, [mediaType]: [...(m[mediaType] || []), fileUri] }
-              : m,
-          ),
-        );
-        return;
-      }
+      // Show media immediately in the card (optimistic UI)
+      setMemorials((cur) =>
+        cur.map((m) =>
+          m.id === memorialId
+            ? { ...m, [mediaType]: [...(m[mediaType] || []), fileUri] }
+            : m,
+        ),
+      );
 
-      const extension = fileUri.split(".").pop().split("?")[0];
-      const fileName = `${memorialId}-${Date.now()}.${extension}`;
+      if (!isSupabaseConfigured) return; // demo mode — local URI is enough
+
       setLoading(true);
+      const extension =
+        fileUri.split(".").pop().split("?")[0] ||
+        (mediaType === "photos"
+          ? "jpg"
+          : mediaType === "videos"
+            ? "mp4"
+            : "mp3");
+      const uniqueFileName = `${memorialId}-${Date.now()}.${extension}`;
       const uploadResult = await storageService.uploadFile(
         fileUri,
-        fileName,
+        uniqueFileName,
         `memorials/${memorialId}`,
       );
       if (!uploadResult.success) {
         Alert.alert(
           "Upload failed",
-          uploadResult.error || "Could not upload media",
+          uploadResult.error ||
+            "Could not upload to cloud. Media is visible locally but may not persist after restart.",
         );
         return;
       }
@@ -269,11 +523,12 @@ export default function HomeScreen({ navigation }) {
       );
       if (!appendResult.success) {
         Alert.alert(
-          "Update failed",
-          appendResult.error || "Could not update memorial",
+          "Save failed",
+          appendResult.error ||
+            "File uploaded but could not be saved to memory.",
         );
       } else {
-        await loadMemorials();
+        await loadMemorials(); // Replace local URI with Supabase URL
       }
     } catch (error) {
       Alert.alert("Error", error.message || "Could not upload media");
@@ -283,159 +538,259 @@ export default function HomeScreen({ navigation }) {
   };
 
   const renderMemoryCard = ({ item }) => {
-    const raw = item.createdAt;
+    const raw = item.createdAt ?? item.created_at;
     const date =
-      raw instanceof Date ? raw : raw?.toDate ? raw.toDate() : new Date();
+      raw instanceof Date
+        ? raw
+        : raw?.toDate
+          ? raw.toDate()
+          : raw
+            ? new Date(raw)
+            : new Date();
     const day = date.getDate();
     const month = MONTHS[date.getMonth()];
-    const fullDate = `${month} ${day}, ${date.getFullYear()}`;
+    const fullDate = `${month} ${getOrdinal(day)}, ${date.getFullYear()}`;
+
+    // Build a unified media grid: photos first, then video tiles
+    const photos = item.photos || [];
+    const videos = item.videos || [];
+    const audios = item.audios || [];
+
+    // Instagram-style media grid
+    const renderMediaGrid = () => {
+      const totalMedia = photos.length + videos.length;
+      if (totalMedia === 0) return null;
+
+      // Single photo — 4:3 landscape
+      if (totalMedia === 1 && photos.length === 1) {
+        return <PhotoTile uri={photos[0]} tileStyle={styles.mediaSingle} />;
+      }
+
+      // Single video — 4:3 landscape tile
+      if (totalMedia === 1 && videos.length === 1) {
+        return (
+          <TouchableOpacity
+            activeOpacity={0.9}
+            style={styles.mediaSingleVideo}
+            onPress={() => setVideoModal({ visible: true, uri: videos[0] })}
+          >
+            <LinearGradient
+              colors={["#2c3e50", "#1c1c1e"]}
+              style={[StyleSheet.absoluteFill, styles.videoTileBg]}
+            >
+              <MaterialCommunityIcons
+                name="play-circle"
+                size={52}
+                color="rgba(255,255,255,0.9)"
+              />
+            </LinearGradient>
+            <View style={styles.videoTileBadge}>
+              <MaterialCommunityIcons name="video" size={11} color="#fff" />
+            </View>
+          </TouchableOpacity>
+        );
+      }
+
+      // 2 items — side by side 1:1
+      if (totalMedia === 2) {
+        const items = [
+          ...photos.map((u) => ({ type: "photo", uri: u })),
+          ...videos.map((u) => ({ type: "video", uri: u })),
+        ];
+        return (
+          <View style={styles.mediaRow2}>
+            {items.map((m, i) =>
+              m.type === "photo" ? (
+                <PhotoTile key={i} uri={m.uri} tileStyle={styles.mediaHalf} />
+              ) : (
+                <TouchableOpacity
+                  key={i}
+                  style={styles.mediaHalf}
+                  activeOpacity={0.9}
+                  onPress={() => setVideoModal({ visible: true, uri: m.uri })}
+                >
+                  <LinearGradient
+                    colors={["#2c3e50", "#1c1c1e"]}
+                    style={[StyleSheet.absoluteFill, styles.videoTileBg]}
+                  >
+                    <MaterialCommunityIcons
+                      name="play-circle"
+                      size={36}
+                      color="rgba(255,255,255,0.9)"
+                    />
+                  </LinearGradient>
+                  <View style={styles.videoTileBadge}>
+                    <MaterialCommunityIcons
+                      name="video"
+                      size={11}
+                      color="#fff"
+                    />
+                  </View>
+                </TouchableOpacity>
+              ),
+            )}
+          </View>
+        );
+      }
+
+      // 3+ items — Instagram 3-column grid, first item taller on left
+      const allItems = [
+        ...photos.map((u) => ({ type: "photo", uri: u })),
+        ...videos.map((u) => ({ type: "video", uri: u })),
+      ];
+      const shown = allItems.slice(0, 3);
+      const extra = totalMedia - 3;
+
+      const renderTile = (m, i, style) => {
+        if (m.type === "photo") {
+          return <PhotoTile key={i} uri={m.uri} tileStyle={style} />;
+        }
+        return (
+          <TouchableOpacity
+            key={i}
+            style={style}
+            activeOpacity={0.9}
+            onPress={() => setVideoModal({ visible: true, uri: m.uri })}
+          >
+            <LinearGradient
+              colors={["#2c3e50", "#1c1c1e"]}
+              style={[StyleSheet.absoluteFill, styles.videoTileBg]}
+            >
+              <MaterialCommunityIcons
+                name="play-circle"
+                size={i === 0 ? 42 : 30}
+                color="rgba(255,255,255,0.9)"
+              />
+            </LinearGradient>
+            <View style={styles.videoTileBadge}>
+              <MaterialCommunityIcons name="video" size={11} color="#fff" />
+            </View>
+          </TouchableOpacity>
+        );
+      };
+
+      return (
+        <View style={styles.mediaGrid3}>
+          {/* Left: large tile */}
+          {renderTile(shown[0], 0, styles.mediaGrid3Left)}
+          {/* Right: two stacked tiles */}
+          <View style={styles.mediaGrid3Right}>
+            {shown[1] && renderTile(shown[1], 1, styles.mediaGrid3SmallTop)}
+            {shown[2] && (
+              <View style={styles.mediaGrid3SmallBottom}>
+                {renderTile(shown[2], 2, StyleSheet.absoluteFill)}
+                {extra > 0 && (
+                  <View style={styles.mediaGridMoreOverlay}>
+                    <Text style={styles.mediaGridMoreText}>+{extra}</Text>
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
+        </View>
+      );
+    };
 
     return (
-      <TouchableOpacity
-        style={styles.memoryCard}
-        activeOpacity={0.85}
-        onPress={() => navigation.navigate("Detail", { memorialId: item.id })}
-      >
-        <View style={styles.memoryCardRow}>
+      <View style={styles.memoryCard}>
+        {/* Card header */}
+        <View style={styles.cardHeader}>
           <View style={styles.dateBadge}>
             <Text style={styles.dateBadgeDay}>{getOrdinal(day)}</Text>
             <Text style={styles.dateBadgeMonth}>{month}</Text>
           </View>
-
-          <View style={styles.memoryCardContent}>
+          <View style={{ flex: 1 }}>
             <Text style={styles.memoryDateText}>{fullDate}</Text>
-            <Text style={styles.memoryTitle}>{item.title}</Text>
+            <Text style={styles.memoryTitle} numberOfLines={1}>
+              {item.title}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.cardDetailBtn}
+            onPress={() =>
+              navigation.navigate("Detail", { memorialId: item.id })
+            }
+          >
+            <MaterialCommunityIcons
+              name="chevron-right"
+              size={20}
+              color={Colors.ink500}
+            />
+          </TouchableOpacity>
+        </View>
 
-            {item.photos?.length > 0 && (
-              <View style={styles.photoGrid}>
-                {item.photos.slice(0, 4).map((uri, idx) => (
-                  <Image
-                    key={idx}
-                    source={{ uri }}
-                    style={[
-                      styles.photoItem,
-                      item.photos.length === 1 && styles.photoItemSingle,
-                      item.photos.length === 3 &&
-                        idx === 2 &&
-                        styles.photoItemWide,
-                    ]}
-                  />
-                ))}
-              </View>
+        {/* Full-width media grid */}
+        {renderMediaGrid()}
+
+        {/* Audio players */}
+        {audios.length > 0 && (
+          <View style={styles.cardAudioSection}>
+            {audios.slice(0, 2).map((uri, idx) => (
+              <AudioBubble key={`${uri}-${idx}`} uri={uri} />
+            ))}
+            {audios.length > 2 && (
+              <Text style={styles.audioMore}>
+                +{audios.length - 2} more audio
+                {audios.length - 2 > 1 ? "s" : ""}
+              </Text>
             )}
+          </View>
+        )}
 
+        {/* Caption */}
+        {!!item.description && (
+          <View style={styles.cardCaption}>
             <Text style={styles.memoryDescription} numberOfLines={3}>
               {item.description}
             </Text>
-
-            <View style={styles.mediaActions}>
-              <TouchableOpacity
-                style={styles.mediaActionBtn}
-                onPress={() => uploadMedia(item.id, "photos")}
-                disabled={loading}
-              >
-                <Text style={styles.mediaActionText}>+ Photo</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.mediaActionBtn}
-                onPress={() => uploadMedia(item.id, "videos")}
-                disabled={loading}
-              >
-                <Text style={styles.mediaActionText}>+ Video</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.mediaActionBtn}
-                onPress={() => uploadMedia(item.id, "audios")}
-                disabled={loading}
-              >
-                <Text style={styles.mediaActionText}>+ Audio</Text>
-              </TouchableOpacity>
-            </View>
           </View>
+        )}
+
+        {/* Action buttons */}
+        <View style={styles.cardActions}>
+          <TouchableOpacity
+            style={styles.mediaActionBtn}
+            onPress={() => uploadMedia(item.id, "photos")}
+            disabled={loading}
+          >
+            <MaterialCommunityIcons
+              name="image-plus"
+              size={13}
+              color={Colors.green700}
+            />
+            <Text style={styles.mediaActionText}>Photo</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.mediaActionBtn}
+            onPress={() => uploadMedia(item.id, "videos")}
+            disabled={loading}
+          >
+            <MaterialCommunityIcons
+              name="video-plus-outline"
+              size={13}
+              color={Colors.green700}
+            />
+            <Text style={styles.mediaActionText}>Video</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.mediaActionBtn}
+            onPress={() => uploadMedia(item.id, "audios")}
+            disabled={loading}
+          >
+            <MaterialCommunityIcons
+              name="microphone-plus"
+              size={13}
+              color={Colors.green700}
+            />
+            <Text style={styles.mediaActionText}>Audio</Text>
+          </TouchableOpacity>
         </View>
-      </TouchableOpacity>
+      </View>
     );
   };
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.welcomeLabel}>Welcome back</Text>
-          <Text style={styles.welcomeName} numberOfLines={1}>
-            {displayName}
-          </Text>
-        </View>
-        <View style={styles.avatarCircle}>
-          <Text style={styles.avatarText}>
-            {displayName[0]?.toUpperCase() || "U"}
-          </Text>
-        </View>
-      </View>
-
-      {/* Action Grid */}
-      <View style={styles.actionGrid}>
-        <TouchableOpacity
-          style={[styles.actionBtn, styles.actionBtnPrimary]}
-          onPress={() => setShowCreateModal(true)}
-        >
-          <Text style={styles.actionIconPrimary}>+</Text>
-          <Text style={styles.actionLabelPrimary}>Add memory</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.actionBtn, styles.actionBtnSecondary]}
-          onPress={() => navigation.navigate("Profile")}
-        >
-          <Text style={styles.actionIcon}>◉</Text>
-          <Text style={styles.actionLabel}>Your profile</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.actionBtn, styles.actionBtnSecondary]}
-          onPress={() => navigation.navigate("ScanQR")}
-        >
-          <Text style={styles.actionIcon}>⊡</Text>
-          <Text style={styles.actionLabel}>Scan QR</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.actionBtn, styles.actionBtnSecondary]}
-          onPress={() => navigation.navigate("GenerateQR")}
-        >
-          <Text style={styles.actionIcon}>◈</Text>
-          <Text style={styles.actionLabel}>Generate QR</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Memories section header */}
-      <View style={styles.sectionRow}>
-        <Text style={styles.sectionTitle}>Your Memories</Text>
-        <TouchableOpacity
-          onPress={() => setSortBy(sortBy === "newest" ? "oldest" : "newest")}
-        >
-          <Text style={styles.filterIcon}>
-            {sortBy === "newest" ? "↓" : "↑"}
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Search bar */}
-      <View style={styles.searchBar}>
-        <Text style={styles.searchIcon}>⌕</Text>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search"
-          placeholderTextColor={Colors.ink300}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          autoCapitalize="none"
-          autoCorrect={false}
-          underlineColorAndroid="transparent"
-          selectionColor={Colors.green700}
-          caretColor={Colors.green700}
-          keyboardAppearance="light"
-        />
-      </View>
-
       {/* Feed */}
       {loading && memorials.length === 0 ? (
         <ActivityIndicator
@@ -450,6 +805,138 @@ export default function HomeScreen({ navigation }) {
           renderItem={renderMemoryCard}
           contentContainerStyle={styles.feedList}
           showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            <>
+              {/* Header */}
+              <View style={styles.header}>
+                <AppLogo size={36} />
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={styles.welcomeLabel}>Welcome back</Text>
+                  <Text style={styles.welcomeName} numberOfLines={1}>
+                    {displayName}
+                  </Text>
+                </View>
+                <View style={styles.avatarCircle}>
+                  <Text style={styles.avatarText}>
+                    {displayName[0]?.toUpperCase() || "U"}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Action Grid */}
+              <View style={styles.actionGrid}>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.actionBtnPrimary]}
+                  onPress={() => setShowCreateModal(true)}
+                >
+                  <MaterialCommunityIcons
+                    name="plus-circle-outline"
+                    size={20}
+                    color="#fff"
+                  />
+                  <Text style={styles.actionLabelPrimary}>Add memory</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.actionBtnSecondary]}
+                  onPress={() => navigation.navigate("Profile")}
+                >
+                  <MaterialCommunityIcons
+                    name="account-circle-outline"
+                    size={20}
+                    color={Colors.ink700}
+                  />
+                  <Text style={styles.actionLabel}>Your profile</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.actionBtnSecondary]}
+                  onPress={() => navigation.navigate("ScanQR")}
+                >
+                  <MaterialCommunityIcons
+                    name="qrcode-scan"
+                    size={20}
+                    color={Colors.ink700}
+                  />
+                  <Text style={styles.actionLabel}>Scan QR</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.actionBtnSecondary]}
+                  onPress={() => navigation.navigate("GenerateQR")}
+                >
+                  <MaterialCommunityIcons
+                    name="qrcode"
+                    size={20}
+                    color={Colors.ink700}
+                  />
+                  <Text style={styles.actionLabel}>Generate QR</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.actionBtnSecondary]}
+                  onPress={() => navigation.navigate("Story")}
+                >
+                  <MaterialCommunityIcons
+                    name="book-open-page-variant-outline"
+                    size={20}
+                    color={Colors.ink700}
+                  />
+                  <Text style={styles.actionLabel}>Story</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.actionBtnSecondary]}
+                  onPress={() => navigation.navigate("PlukQR")}
+                >
+                  <MaterialCommunityIcons
+                    name="star-four-points-outline"
+                    size={20}
+                    color={Colors.ink700}
+                  />
+                  <Text style={styles.actionLabel}>Pluk QR Code</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Memories section header */}
+              <View style={styles.sectionRow}>
+                <Text style={styles.sectionTitle}>Your Memories</Text>
+                <TouchableOpacity
+                  onPress={() =>
+                    setSortBy(sortBy === "newest" ? "oldest" : "newest")
+                  }
+                >
+                  <MaterialCommunityIcons
+                    name={
+                      sortBy === "newest"
+                        ? "sort-calendar-descending"
+                        : "sort-calendar-ascending"
+                    }
+                    size={22}
+                    color={Colors.ink500}
+                  />
+                </TouchableOpacity>
+              </View>
+
+              {/* Search bar */}
+              <View style={styles.searchBar}>
+                <MaterialCommunityIcons
+                  name="magnify"
+                  size={20}
+                  color={Colors.ink300}
+                  style={{ marginRight: 6 }}
+                />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search"
+                  placeholderTextColor={Colors.ink300}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  underlineColorAndroid="transparent"
+                  selectionColor={Colors.green700}
+                  caretColor={Colors.green700}
+                  keyboardAppearance="light"
+                />
+              </View>
+            </>
+          }
           ListEmptyComponent={
             <View style={styles.emptyCard}>
               <Text style={styles.emptyTitle}>No memories yet</Text>
@@ -458,6 +945,22 @@ export default function HomeScreen({ navigation }) {
               </Text>
             </View>
           }
+        />
+      )}
+
+      {/* Floating Action Button */}
+      <TouchableOpacity
+        style={styles.fab}
+        activeOpacity={0.85}
+        onPress={() => setShowCreateModal(true)}
+      >
+        <MaterialCommunityIcons name="plus" size={28} color="#fff" />
+      </TouchableOpacity>
+
+      {videoModal.visible && videoModal.uri && (
+        <VideoPlayerModal
+          uri={videoModal.uri}
+          onClose={() => setVideoModal({ visible: false, uri: null })}
         />
       )}
 
@@ -573,10 +1076,10 @@ export default function HomeScreen({ navigation }) {
                   <Text style={styles.previewLabel}>
                     Audio ({draftAudios.length})
                   </Text>
-                  {draftAudios.map((uri, idx) => (
+                  {draftAudios.map((item, idx) => (
                     <View key={idx} style={styles.fileRow}>
                       <Text style={styles.fileName} numberOfLines={1}>
-                        {uri.split("/").pop()}
+                        {item.name || item.uri?.split("/").pop()}
                       </Text>
                       <TouchableOpacity onPress={() => removeDraftAudio(idx)}>
                         <Text style={styles.removeBtnText}>✕</Text>
@@ -739,10 +1242,16 @@ const styles = StyleSheet.create({
     borderColor: Colors.ink100,
     overflow: "hidden",
   },
-  memoryCardRow: {
+  cardHeader: {
     flexDirection: "row",
-    padding: 14,
-    gap: 12,
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 10,
+  },
+  cardDetailBtn: {
+    padding: 4,
   },
   dateBadge: {
     width: 44,
@@ -763,51 +1272,128 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
   },
-  memoryCardContent: {
-    flex: 1,
-  },
   memoryDateText: {
     fontSize: 12,
     color: Colors.ink500,
-    marginBottom: 3,
+    marginBottom: 2,
   },
   memoryTitle: {
     fontSize: 16,
     fontWeight: "700",
     color: Colors.ink700,
-    marginBottom: 8,
   },
-  photoGrid: {
+  // ── Media grid ───────────────────────────────────────
+  mediaSingle: {
+    width: "100%",
+    aspectRatio: 4 / 3,
+    overflow: "hidden",
+  },
+  brokenImageTile: {
+    backgroundColor: "#1c1c1e",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  mediaSingleVideo: {
+    width: "100%",
+    aspectRatio: 4 / 3,
+    backgroundColor: "#1c1c1e",
+    overflow: "hidden",
+  },
+  mediaRow2: {
     flexDirection: "row",
-    flexWrap: "wrap",
+    gap: 2,
+    height: 200,
+  },
+  mediaHalf: {
+    flex: 1,
+    backgroundColor: "#1c1c1e",
+    overflow: "hidden",
+  },
+  mediaGrid3: {
+    flexDirection: "row",
+    gap: 2,
+    height: 220,
+  },
+  mediaGrid3Left: {
+    flex: 2,
+    backgroundColor: "#1c1c1e",
+    overflow: "hidden",
+  },
+  mediaGrid3Right: {
+    flex: 1,
+    gap: 2,
+  },
+  mediaGrid3SmallTop: {
+    flex: 1,
+    backgroundColor: "#1c1c1e",
+    overflow: "hidden",
+  },
+  mediaGrid3SmallBottom: {
+    flex: 1,
+    backgroundColor: "#1c1c1e",
+    overflow: "hidden",
+    position: "relative",
+  },
+  mediaGridMoreOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  mediaGridMoreText: {
+    color: "#fff",
+    fontSize: 22,
+    fontWeight: "700",
+  },
+  // ── Video tile overlays ───────────────────────────────
+  videoTileBg: {
+    backgroundColor: "#1c1c1e",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  videoTileBadge: {
+    position: "absolute",
+    bottom: 6,
+    left: 6,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    flexDirection: "row",
+    alignItems: "center",
     gap: 3,
-    marginBottom: 10,
   },
-  photoItem: {
-    width: "49%",
-    aspectRatio: 1,
-    borderRadius: 8,
-    backgroundColor: Colors.ink100,
+  // ── Audio section ─────────────────────────────────────
+  cardAudioSection: {
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    gap: 6,
   },
-  photoItemSingle: {
-    width: "100%",
-    aspectRatio: 16 / 9,
-  },
-  photoItemWide: {
-    width: "100%",
-    aspectRatio: 2,
+  // ── Caption ───────────────────────────────────────────
+  cardCaption: {
+    paddingHorizontal: 14,
+    paddingTop: 10,
   },
   memoryDescription: {
     fontSize: 14,
     color: Colors.ink500,
     lineHeight: 20,
-    marginBottom: 10,
+  },
+  // ── Action buttons ────────────────────────────────────
+  cardActions: {
+    flexDirection: "row",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
   mediaActions: {
     flexDirection: "row",
     gap: 6,
   },
   mediaActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
     backgroundColor: Colors.ink100,
     paddingVertical: 5,
     paddingHorizontal: 10,
@@ -987,5 +1573,77 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.ink700,
     marginRight: 10,
+  },
+  fab: {
+    position: "absolute",
+    bottom: 28,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: Colors.green500,
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    zIndex: 20,
+  },
+  // Audio bubble in card
+  audioList: {
+    marginTop: 6,
+    gap: 6,
+  },
+  audioBubble: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#EEF5F1",
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: Colors.green100,
+  },
+  audioBubbleBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: Colors.green700,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  audioBubbleWave: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    height: 28,
+    gap: 3,
+    overflow: "hidden",
+  },
+  audioBubbleBar: {
+    width: 3,
+    borderRadius: 3,
+  },
+  audioBubbleBarFilled: {
+    backgroundColor: Colors.green700,
+  },
+  audioBubbleBarEmpty: {
+    backgroundColor: "#A8C8B8",
+  },
+  audioBubbleTime: {
+    fontSize: 11,
+    color: Colors.ink700,
+    fontWeight: "600",
+    minWidth: 34,
+    textAlign: "right",
+  },
+  audioMore: {
+    fontSize: 11,
+    color: Colors.ink500,
+    paddingLeft: 4,
+    marginTop: 2,
   },
 });

@@ -11,6 +11,7 @@ import {
 import { Camera } from "expo-camera";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { Colors } from "../theme/colors";
+import AppLogo from "../components/AppLogo";
 
 export default function QRScannerScreen({ navigation }) {
   const [hasPermission, setHasPermission] = useState(null);
@@ -101,6 +102,7 @@ export default function QRScannerScreen({ navigation }) {
               color={Colors.ink700}
             />
           </TouchableOpacity>
+          <AppLogo size={32} />
           <Text style={styles.heading}>Scan Profile QR</Text>
         </View>
         <Text style={styles.hint}>
@@ -141,6 +143,7 @@ export default function QRScannerScreen({ navigation }) {
             color={Colors.ink700}
           />
         </TouchableOpacity>
+        <AppLogo size={32} />
         <Text style={styles.heading}>Scan Profile QR</Text>
       </View>
       <View style={styles.scannerBox}>

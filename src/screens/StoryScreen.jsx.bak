@@ -1,0 +1,44 @@
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { Colors } from "../theme/colors";
+
+export default function StoryScreen({ navigation }) {
+  return (
+    <View style={styles.container}>
+      <TouchableOpacity
+        style={styles.backBtn}
+        onPress={() => navigation.goBack()}
+      >
+        <Text style={styles.backText}>← Back</Text>
+      </TouchableOpacity>
+      <Text style={styles.title}>Story</Text>
+      <Text style={styles.subtitle}>Coming soon</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: Colors.cream,
+    paddingTop: 60,
+    paddingHorizontal: 20,
+  },
+  backBtn: {
+    marginBottom: 20,
+  },
+  backText: {
+    fontSize: 16,
+    color: Colors.green700,
+    fontWeight: "600",
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: "700",
+    color: Colors.ink900,
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: Colors.ink400,
+  },
+});

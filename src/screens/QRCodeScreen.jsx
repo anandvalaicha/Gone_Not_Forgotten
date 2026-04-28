@@ -14,6 +14,7 @@ import QRCode from "react-native-qrcode-svg";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { authService, settingsService } from "../services";
 import { Colors } from "../theme/colors";
+import AppLogo from "../components/AppLogo";
 
 const DEMO_AVATAR =
   "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=400&q=80";
@@ -121,6 +122,7 @@ export default function QRCodeScreen({ navigation }) {
 
       {/* Title */}
       <View style={styles.titleArea}>
+        <AppLogo size={36} tintColor="#fff" />
         <Text style={styles.title}>My Profile QR</Text>
         <Text style={styles.subtitle}>Scan to visit my profile page</Text>
       </View>

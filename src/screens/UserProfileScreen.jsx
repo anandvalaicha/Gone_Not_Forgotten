@@ -13,8 +13,9 @@ import {
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { LinearGradient } from "expo-linear-gradient";
 import { memorialService, authService } from "../services";
-import { isFirebaseConfigured } from "../config/firebase";
+import { isSupabaseConfigured } from "../config/supabase";
 import { Colors } from "../theme/colors";
+import AppLogo from "../components/AppLogo";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 const MONTHS = [
@@ -82,7 +83,7 @@ export default function UserProfileScreen({ navigation, route }) {
 
   const loadUserProfile = async () => {
     try {
-      if (!isFirebaseConfigured) {
+      if (!isSupabaseConfigured) {
         // Demo mode
         setUserProfile(DEMO_USER_PROFILE);
         setLoading(false);
@@ -287,6 +288,11 @@ export default function UserProfileScreen({ navigation, route }) {
           >
             <MaterialCommunityIcons name="arrow-left" size={20} color="#fff" />
           </TouchableOpacity>
+
+          {/* App logo */}
+          <View style={{ position: "absolute", top: 56, right: 20 }}>
+            <AppLogo size={32} tintColor="#fff" />
+          </View>
 
           {/* Decorative green arc */}
           <View style={styles.greenArc} />
