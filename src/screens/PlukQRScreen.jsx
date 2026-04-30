@@ -46,33 +46,22 @@ export default function PlukQRScreen({ navigation }) {
   const [plukId] = useState(() => `pluk-${Date.now()}`);
 
   const user = authService.getCurrentUser();
-  const userId = user?.uid || "demo-user-001";
+  const userId = user?.uid;
   const displayName =
     user?.displayName ||
     user?.email?.split("@")[0]?.replace(/[._]/g, " ") ||
     "Pluk Memorial";
 
-  const qrValue = `https://gonenotforgotten.app/pluk/${plukId}`;
+  // Embed userId so the scanner can load the right person's profile.
+  // Falls back to a pluk-only URL if the user somehow isn't loaded yet.
+  const qrValue = userId
+    ? `https://gonenotforgotten.app/profile/${userId}?pluk=${plukId}`
+    : `https://gonenotforgotten.app/pluk/${plukId}`;
 
   // Load user memorials for the picker
   const loadMemorials = async () => {
     setLoadingMemorials(true);
-    if (!isSupabaseConfigured) {
-      setMemorials([
-        {
-          id: "demo-memorial-1",
-          title: "Eleanor Grace",
-          photos: [
-            "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=900&q=80",
-            "https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?w=900&q=80",
-            "https://images.unsplash.com/photo-1511895426328-dc8714191011?w=900&q=80",
-            "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=900&q=80",
-          ],
-          videos: [],
-          audios: [],
-        },
-      ]);
-    } else {
+    if (isSupabaseConfigured && userId) {
       const result = await memorialService.getUserMemorials(userId);
       if (result.success) {
         setMemorials(result.memorials);

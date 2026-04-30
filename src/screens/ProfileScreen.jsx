@@ -21,7 +21,7 @@ import {
   useAudioPlayerStatus,
   setAudioModeAsync,
 } from "expo-audio";
-import { authService, memorialService } from "../services";
+import { authService, memorialService, storageService } from "../services";
 import { isSupabaseConfigured } from "../config/supabase";
 import { useSignOut } from "../context/AuthContext";
 import { Colors } from "../theme/colors";
@@ -157,7 +157,8 @@ export default function ProfileScreen({ navigation, route }) {
   const [birthYear, setBirthYear] = useState(user?.birthYear || "");
   const [deathYear, setDeathYear] = useState(user?.deathYear || "");
   const [bio, setBio] = useState(user?.bio || "");
-  const [avatar, setAvatar] = useState(null);
+  const [avatar, setAvatar] = useState(user?.photoURL || null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [activeTab, setActiveTab] = useState("Memories");
   const [memorials, setMemorials] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -209,8 +210,47 @@ export default function ProfileScreen({ navigation, route }) {
       aspect: [1, 1],
       quality: 0.8,
     });
-    if (!result.canceled && result.assets?.[0]?.uri)
-      setAvatar(result.assets[0].uri);
+    if (result.canceled || !result.assets?.[0]?.uri) return;
+
+    const localUri = result.assets[0].uri;
+    setAvatar(localUri); // show immediately for responsive feel
+    setUploadingAvatar(true);
+
+    try {
+      const userId = user?.uid;
+      const ext =
+        localUri.split(".").pop()?.split("?")[0]?.toLowerCase() || "jpg";
+      const fileName = `profile.${ext}`;
+      const folder = `avatars/${userId}`;
+
+      const uploadResult = await storageService.uploadFile(
+        localUri,
+        fileName,
+        folder,
+      );
+      if (!uploadResult.success) {
+        Alert.alert(
+          "Upload failed",
+          uploadResult.error || "Could not upload photo.",
+        );
+        return;
+      }
+
+      const saveResult = await authService.updateUserProfile({
+        photoURL: uploadResult.url,
+      });
+      if (!saveResult.success) {
+        Alert.alert(
+          "Save failed",
+          saveResult.error || "Could not save profile photo.",
+        );
+        return;
+      }
+
+      setAvatar(uploadResult.url); // replace local URI with the permanent URL
+    } finally {
+      setUploadingAvatar(false);
+    }
   };
 
   const signOut = () => {
@@ -399,6 +439,12 @@ export default function ProfileScreen({ navigation, route }) {
               onPress={() => {
                 setShowMenu(false);
                 navigation.navigate("EditProfile", {
+                  currentFirstName: user?.firstName || "",
+                  currentLastName: user?.lastName || "",
+                  currentEmail: user?.email || "",
+                  currentPhone: user?.phone || "",
+                  currentAge: user?.age || "",
+                  currentGender: user?.gender || "",
                   currentName: profileName,
                   currentBio: bio,
                   currentBirthYear: birthYear,
@@ -497,7 +543,11 @@ export default function ProfileScreen({ navigation, route }) {
             >
               {/* White gap ring */}
               <View style={styles.avatarWhiteRing}>
-                <TouchableOpacity onPress={pickAvatar} activeOpacity={0.85}>
+                <TouchableOpacity
+                  onPress={pickAvatar}
+                  activeOpacity={0.85}
+                  disabled={uploadingAvatar}
+                >
                   <Image
                     source={{
                       uri:
@@ -506,6 +556,11 @@ export default function ProfileScreen({ navigation, route }) {
                     }}
                     style={styles.avatarImage}
                   />
+                  {uploadingAvatar && (
+                    <View style={styles.avatarUploadOverlay}>
+                      <ActivityIndicator color="#fff" size="small" />
+                    </View>
+                  )}
                 </TouchableOpacity>
               </View>
             </LinearGradient>
@@ -670,6 +725,17 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
     borderRadius: AVATAR_SIZE / 2,
+  },
+  avatarUploadOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: AVATAR_SIZE / 2,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   cameraBadge: {
     position: "absolute",

@@ -1,6 +1,6 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, ActivityIndicator, StyleSheet, Linking } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import HomeScreen from './src/screens/HomeScreen';
@@ -14,10 +14,13 @@ import EditProfileScreen from './src/screens/EditProfileScreen';
 import MemorialDetailScreen from './src/screens/MemorialDetailScreen';
 import SignInScreen from './src/screens/SignInScreen';
 import SignUpScreen from './src/screens/SignUpScreen';
+import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
+import ResetPasswordScreen from './src/screens/ResetPasswordScreen';
 import SplashScreen from './src/screens/SplashScreen';
 import StoryScreen from './src/screens/StoryScreen';
 import PlukQRScreen from './src/screens/PlukQRScreen';
 import { authService } from './src/services';
+import { supabase } from './src/config/supabase';
 import { AuthContext } from './src/context/AuthContext';
 
 const Stack = createNativeStackNavigator();
@@ -26,21 +29,15 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [initializing, setInitializing] = useState(true);
   const [showSplash, setShowSplash] = useState(true);
-  // Guard: once sign-out starts, ignore any Supabase auth callbacks that
-  // fire afterwards (e.g. from the autoRefreshToken timer).
+  const [recoveryMode, setRecoveryMode] = useState(false);
   const signingOut = useRef(false);
 
-  // Must be declared before any early returns (hook rules)
   const handleSignOut = useCallback(() => {
     console.log('[SignOut] button pressed — clearing user state immediately');
-    // ── Synchronous: switch the navigator to the auth stack RIGHT NOW ──────
-    // Do NOT await anything here. Setting user=null is enough to unmount the
-    // app stack and render SignIn. Storage cleanup happens in the background.
     signingOut.current = true;
     setUser(null);
-    setShowSplash(false); // go straight to login, no splash on sign-out
+    setShowSplash(false);
 
-    // ── Background: clear AsyncStorage + reset supabase in-memory session ──
     authService.signOutUser()
       .then(() => console.log('[SignOut] storage cleared OK'))
       .catch((e) => console.warn('[SignOut] cleanup error (non-fatal):', e))
@@ -49,24 +46,70 @@ export default function App() {
       });
   }, []);
 
+  const handlePasswordReset = useCallback(async () => {
+    // Sign out the recovery session so the user logs in fresh
+    try { await supabase.auth.signOut({ scope: 'local' }); } catch (_) {}
+    setRecoveryMode(false);
+    setUser(null);
+  }, []);
+
+  // Handle incoming deep links (password recovery)
+  useEffect(() => {
+    const handleUrl = async (url) => {
+      if (!url || typeof url !== 'string') return;
+      // Supabase puts tokens in the URL hash after redirecting
+      const hashIndex = url.indexOf('#');
+      if (hashIndex === -1) return;
+      const hash = url.slice(hashIndex + 1);
+      const params = new URLSearchParams(hash);
+      const type = params.get('type');
+      const accessToken = params.get('access_token');
+      const refreshToken = params.get('refresh_token');
+
+      if (type === 'recovery' && accessToken && refreshToken) {
+        const { error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+        if (!error) {
+          setRecoveryMode(true);
+        }
+      }
+    };
+
+    // App opened via deep link
+    Linking.getInitialURL().then((url) => { if (url) handleUrl(url); });
+
+    // App already running, deep link received
+    const sub = Linking.addEventListener('url', (event) => handleUrl(event.url));
+    return () => sub.remove();
+  }, []);
+
   useEffect(() => {
     const unregister = authService.onAuthStateChange((currentUser) => {
       console.log('[AuthState] changed, signingOut=', signingOut.current, 'user=', currentUser?.email ?? null);
-      // Drop any session restoration that arrives during/after sign-out
       if (signingOut.current) {
         console.log('[AuthState] ignored — sign-out in progress');
         return;
       }
+      // Don't update user state when we're in recovery mode
+      if (recoveryMode) return;
       setUser(currentUser);
       setInitializing(false);
-      // Do NOT reset showSplash here — SplashScreen calls onFinish itself
     });
     return unregister;
-  }, []);
+  }, [recoveryMode]);
+
+  // Once recoveryMode is set we can mark initializing done
+  useEffect(() => {
+    if (recoveryMode) setInitializing(false);
+  }, [recoveryMode]);
+
+  const authCtx = { signOut: handleSignOut, onPasswordReset: handlePasswordReset };
 
   if (initializing) {
     return (
-      <AuthContext.Provider value={handleSignOut}>
+      <AuthContext.Provider value={authCtx}>
         <View style={styles.loading}>
           <ActivityIndicator size="large" color="#6cab90" />
           <Text style={styles.loadingText}>Loading...</Text>
@@ -75,39 +118,42 @@ export default function App() {
     );
   }
 
-  if (showSplash && !user) {
+  if (showSplash && !user && !recoveryMode) {
     return (
-      <AuthContext.Provider value={handleSignOut}>
+      <AuthContext.Provider value={authCtx}>
         <SplashScreen onFinish={() => setShowSplash(false)} />
       </AuthContext.Provider>
     );
   }
 
   return (
-    <AuthContext.Provider value={handleSignOut}>
+    <AuthContext.Provider value={authCtx}>
       <NavigationContainer>
-      <Stack.Navigator key={user ? 'app' : 'auth'} screenOptions={{ headerShown: false }}>
-        {user ? (
-          <>
-            <Stack.Screen name="Home" component={HomeScreen} />
-            <Stack.Screen name="Profile" component={ProfileScreen} />
-            <Stack.Screen name="EditProfile" component={EditProfileScreen} />
-            <Stack.Screen name="Settings" component={SettingsScreen} />
-            <Stack.Screen name="Gallery" component={GalleryScreen} />
-            <Stack.Screen name="GenerateQR" component={QRCodeScreen} />
-            <Stack.Screen name="ScanQR" component={QRScannerScreen} />
-            <Stack.Screen name="UserProfile" component={UserProfileScreen} />
-            <Stack.Screen name="Detail" component={MemorialDetailScreen} />
-            <Stack.Screen name="Story" component={StoryScreen} />
-            <Stack.Screen name="PlukQR" component={PlukQRScreen} />
-          </>
-        ) : (
-          <>
-            <Stack.Screen name="SignIn" component={SignInScreen} />
-            <Stack.Screen name="SignUp" component={SignUpScreen} />
-          </>
-        )}
-      </Stack.Navigator>
+        <Stack.Navigator key={recoveryMode ? 'recovery' : user ? 'app' : 'auth'} screenOptions={{ headerShown: false }}>
+          {recoveryMode ? (
+            <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
+          ) : user ? (
+            <>
+              <Stack.Screen name="Home" component={HomeScreen} />
+              <Stack.Screen name="Profile" component={ProfileScreen} />
+              <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+              <Stack.Screen name="Settings" component={SettingsScreen} />
+              <Stack.Screen name="Gallery" component={GalleryScreen} />
+              <Stack.Screen name="GenerateQR" component={QRCodeScreen} />
+              <Stack.Screen name="ScanQR" component={QRScannerScreen} />
+              <Stack.Screen name="UserProfile" component={UserProfileScreen} />
+              <Stack.Screen name="Detail" component={MemorialDetailScreen} />
+              <Stack.Screen name="Story" component={StoryScreen} />
+              <Stack.Screen name="PlukQR" component={PlukQRScreen} />
+            </>
+          ) : (
+            <>
+              <Stack.Screen name="SignIn" component={SignInScreen} />
+              <Stack.Screen name="SignUp" component={SignUpScreen} />
+              <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+            </>
+          )}
+        </Stack.Navigator>
       </NavigationContainer>
     </AuthContext.Provider>
   );

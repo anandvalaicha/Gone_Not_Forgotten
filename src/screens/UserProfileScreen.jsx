@@ -83,19 +83,33 @@ export default function UserProfileScreen({ navigation, route }) {
 
   const loadUserProfile = async () => {
     try {
-      if (!isSupabaseConfigured) {
-        // Demo mode
+      if (!isSupabaseConfigured || !userId) {
         setUserProfile(DEMO_USER_PROFILE);
         setLoading(false);
         return;
       }
 
-      // In a real app, you'd fetch user profile settings and public data
-      // For now, we'll show a demo profile
-      setUserProfile(DEMO_USER_PROFILE);
+      const result = await memorialService.getPublicProfile(userId);
+      if (!result.success) {
+        Alert.alert("Error", "Could not load user profile.");
+        navigation.goBack();
+        return;
+      }
+
+      const { profile } = result;
+      setUserProfile({
+        userId:       profile.userId,
+        displayName:  profile.displayName,
+        bio:          profile.bio,
+        avatar:       profile.photoURL,
+        showBio:      true,
+        showMemories: true,
+        showGallery:  true,
+        memorials:    profile.memorials,
+      });
       setLoading(false);
     } catch (error) {
-      Alert.alert("Error", "Could not load user profile");
+      Alert.alert("Error", "Could not load user profile.");
       navigation.goBack();
     }
   };
@@ -126,7 +140,7 @@ export default function UserProfileScreen({ navigation, route }) {
     return userProfile.memorials.map((item) => {
       const raw = item.createdAt;
       const date =
-        raw instanceof Date ? raw : raw?.toDate ? raw.toDate() : new Date();
+        raw instanceof Date ? raw : raw?.toDate ? raw.toDate() : new Date(raw);
       const day = date.getDate();
       const month = MONTHS[date.getMonth()];
       const fullDate = `${month} ${day}, ${date.getFullYear()}`;
@@ -306,10 +320,18 @@ export default function UserProfileScreen({ navigation, route }) {
               end={{ x: 1, y: 1 }}
             >
               <View style={styles.avatarWhiteRing}>
-                <Image
-                  source={{ uri: userProfile.avatar }}
-                  style={styles.avatarImage}
-                />
+                {userProfile.avatar ? (
+                  <Image
+                    source={{ uri: userProfile.avatar }}
+                    style={styles.avatarImage}
+                  />
+                ) : (
+                  <View style={[styles.avatarImage, styles.avatarFallback]}>
+                    <Text style={styles.avatarInitial}>
+                      {(userProfile.displayName?.[0] || "?").toUpperCase()}
+                    </Text>
+                  </View>
+                )}
               </View>
             </LinearGradient>
           </View>
@@ -463,6 +485,16 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
     borderRadius: 60,
+  },
+  avatarFallback: {
+    backgroundColor: Colors.green700,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarInitial: {
+    fontSize: 48,
+    fontWeight: "700",
+    color: "#fff",
   },
   name: {
     fontSize: 28,

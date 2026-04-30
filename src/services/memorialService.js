@@ -1,37 +1,8 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase, isSupabaseConfigured } from '../config/supabase';
-
-// ─── AsyncStorage demo-mode helpers ──────────────────────────────────────────
-const DEMO_KEY = 'gnf_memorials';
-
-async function demoGetAll() {
-  try {
-    const raw = await AsyncStorage.getItem(DEMO_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
-}
-
-async function demoSetAll(items) {
-  try { await AsyncStorage.setItem(DEMO_KEY, JSON.stringify(items)); } catch {}
-}
-// ─────────────────────────────────────────────────────────────────────────────
 
 export const memorialService = {
   createMemorial: async (userId, memorialData) => {
-    if (!isSupabaseConfigured) {
-      const all = await demoGetAll();
-      const item = {
-        ...memorialData,
-        id: `local-${Date.now()}`,
-        user_id: userId,
-        created_at: new Date().toISOString(),
-        photos: memorialData.photos || [],
-        videos: memorialData.videos || [],
-        audios: memorialData.audios || [],
-      };
-      await demoSetAll([item, ...all]);
-      return { success: true, id: item.id };
-    }
+    if (!isSupabaseConfigured) return { success: false, error: 'Supabase is not configured.' };
     const { data, error } = await supabase
       .from('memorials')
       .insert({ ...memorialData, user_id: userId })
@@ -42,10 +13,7 @@ export const memorialService = {
   },
 
   getUserMemorials: async (userId) => {
-    if (!isSupabaseConfigured) {
-      const all = await demoGetAll();
-      return { success: true, memorials: all };
-    }
+    if (!isSupabaseConfigured) return { success: true, memorials: [] };
     const { data, error } = await supabase
       .from('memorials')
       .select('*')
@@ -56,13 +24,7 @@ export const memorialService = {
   },
 
   getMemorial: async (memorialId) => {
-    if (!isSupabaseConfigured) {
-      const all = await demoGetAll();
-      const found = all.find((m) => m.id === memorialId);
-      return found
-        ? { success: true, memorial: found }
-        : { success: false, error: 'Memorial not found.' };
-    }
+    if (!isSupabaseConfigured) return { success: false, error: 'Supabase is not configured.' };
     const { data, error } = await supabase
       .from('memorials')
       .select('*')
@@ -73,13 +35,7 @@ export const memorialService = {
   },
 
   updateMemorial: async (memorialId, updateData) => {
-    if (!isSupabaseConfigured) {
-      const all = await demoGetAll();
-      await demoSetAll(
-        all.map((m) => (m.id === memorialId ? { ...m, ...updateData } : m)),
-      );
-      return { success: true };
-    }
+    if (!isSupabaseConfigured) return { success: false, error: 'Supabase is not configured.' };
     const { error } = await supabase
       .from('memorials')
       .update({ ...updateData, updated_at: new Date().toISOString() })
@@ -89,17 +45,7 @@ export const memorialService = {
   },
 
   appendMedia: async (memorialId, mediaType, mediaUrl) => {
-    if (!isSupabaseConfigured) {
-      const all = await demoGetAll();
-      await demoSetAll(
-        all.map((m) => {
-          if (m.id !== memorialId) return m;
-          const existing = Array.isArray(m[mediaType]) ? m[mediaType] : [];
-          return { ...m, [mediaType]: [...existing, mediaUrl] };
-        }),
-      );
-      return { success: true };
-    }
+    if (!isSupabaseConfigured) return { success: false, error: 'Supabase is not configured.' };
     const { data, error: fetchError } = await supabase
       .from('memorials')
       .select(mediaType)
@@ -116,13 +62,50 @@ export const memorialService = {
   },
 
   deleteMemorial: async (memorialId) => {
-    if (!isSupabaseConfigured) {
-      const all = await demoGetAll();
-      await demoSetAll(all.filter((m) => m.id !== memorialId));
-      return { success: true };
-    }
+    if (!isSupabaseConfigured) return { success: false, error: 'Supabase is not configured.' };
     const { error } = await supabase.from('memorials').delete().eq('id', memorialId);
     if (error) return { success: false, error: error.message };
     return { success: true };
+  },
+
+  // Fetch another user's public profile + their memorials for the QR scan view
+  getPublicProfile: async (userId) => {
+    if (!isSupabaseConfigured) return { success: false, error: 'Not configured.' };
+
+    const [profileRes, memorialsRes] = await Promise.all([
+      supabase.from('profiles').select('*').eq('id', userId).single(),
+      supabase
+        .from('memorials')
+        .select('id, title, description, photos, videos, audios, created_at')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false }),
+    ]);
+
+    if (profileRes.error && !profileRes.data) {
+      return { success: false, error: profileRes.error.message };
+    }
+
+    const p = profileRes.data || {};
+    return {
+      success: true,
+      profile: {
+        userId,
+        displayName:
+          p.display_name ||
+          [p.first_name, p.last_name].filter(Boolean).join(' ') ||
+          'Unknown User',
+        bio:      p.bio      || '',
+        photoURL: p.photo_url || null,
+        memorials: (memorialsRes.data || []).map((m) => ({
+          id:          m.id,
+          title:       m.title,
+          description: m.description,
+          createdAt:   new Date(m.created_at),
+          photos:      m.photos  || [],
+          videos:      m.videos  || [],
+          audios:      m.audios  || [],
+        })),
+      },
+    };
   },
 };

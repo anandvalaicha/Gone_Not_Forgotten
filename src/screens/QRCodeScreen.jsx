@@ -16,9 +16,6 @@ import { authService, settingsService } from "../services";
 import { Colors } from "../theme/colors";
 import AppLogo from "../components/AppLogo";
 
-const DEMO_AVATAR =
-  "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=400&q=80";
-
 export default function QRCodeScreen({ navigation }) {
   const user = authService.getCurrentUser();
   const userId = user?.uid || "demo-user-001";
@@ -143,12 +140,17 @@ export default function QRCodeScreen({ navigation }) {
                 color="#1A1A1A"
                 backgroundColor="#FFFFFF"
               />
-              {/* Avatar center */}
+              {/* Avatar center — real user photo or initial */}
               <View style={styles.avatarOverlay}>
-                <Image
-                  source={{ uri: DEMO_AVATAR }}
-                  style={styles.avatarImage}
-                />
+                {user?.photoURL ? (
+                  <Image source={{ uri: user.photoURL }} style={styles.avatarImage} />
+                ) : (
+                  <View style={[styles.avatarImage, styles.avatarInitialWrap]}>
+                    <Text style={styles.avatarInitialText}>
+                      {(displayName[0] || "?").toUpperCase()}
+                    </Text>
+                  </View>
+                )}
               </View>
             </View>
 
@@ -374,6 +376,16 @@ const styles = StyleSheet.create({
   avatarImage: {
     width: "100%",
     height: "100%",
+  },
+  avatarInitialWrap: {
+    backgroundColor: "#6cab90",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarInitialText: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: "#fff",
   },
 
   // URL row

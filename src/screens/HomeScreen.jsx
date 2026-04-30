@@ -37,26 +37,6 @@ import { memorialService, authService, storageService } from "../services";
 import { Colors } from "../theme/colors";
 import AppLogo from "../components/AppLogo";
 
-const DEMO_MEMORIALS = [
-  {
-    id: "demo-memorial-1",
-    title: "Eleanor Grace",
-    years: "1948 — 2023",
-    description:
-      "Today was perfect. Surrounded by the people I love, laughing, reminiscing, and just soaking it all in. I've never felt more grateful—for the years behind me and the moments that brought me here.\n\nLife has been good, and today was a beautiful reminder of that.",
-    visibility: "public",
-    createdAt: new Date("2023-12-01"),
-    photos: [
-      "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=900&q=80",
-      "https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?w=900&q=80",
-      "https://images.unsplash.com/photo-1511895426328-dc8714191011?w=900&q=80",
-      "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=900&q=80",
-    ],
-    videos: [],
-    audios: [],
-  },
-];
-
 const MONTHS = [
   "Jan",
   "Feb",
@@ -329,9 +309,7 @@ function AudioBubble({ uri }) {
 export default function HomeScreen({ navigation }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [memorials, setMemorials] = useState(
-    isSupabaseConfigured ? [] : DEMO_MEMORIALS,
-  );
+  const [memorials, setMemorials] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -376,20 +354,7 @@ export default function HomeScreen({ navigation }) {
   }, [memorials, searchQuery, sortBy]);
 
   const loadMemorials = async () => {
-    if (!isSupabaseConfigured) {
-      try {
-        const stored = await AsyncStorage.getItem(MEMORIALS_STORAGE_KEY);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          setMemorials(parsed.length > 0 ? parsed : DEMO_MEMORIALS);
-        } else {
-          setMemorials(DEMO_MEMORIALS);
-        }
-      } catch {
-        setMemorials(DEMO_MEMORIALS);
-      }
-      return;
-    }
+    if (!isSupabaseConfigured) return;
     if (!userId) return;
     setLoading(true);
     const result = await memorialService.getUserMemorials(userId);
@@ -590,22 +555,6 @@ export default function HomeScreen({ navigation }) {
       Alert.alert("Validation", "Please fill in name and description.");
       return;
     }
-    if (!isSupabaseConfigured) {
-      const local = {
-        id: `local-${Date.now()}`,
-        title,
-        years: "Forever remembered",
-        description,
-        visibility: "public",
-        createdAt: new Date(),
-        photos: draftPhotos,
-        videos: draftVideos,
-        audios: draftAudios.map((a) => a.uri ?? a),
-      };
-      setMemorials((cur) => [local, ...cur]);
-      resetModal();
-      return;
-    }
     setLoading(true);
     uploadInProgress.current = true;
 
@@ -743,18 +692,6 @@ export default function HomeScreen({ navigation }) {
         if (pickerResult.canceled || !pickerResult.assets?.[0]?.uri) return;
         const ext = mediaType === "photos" ? "jpg" : "mp4";
         fileUri = await resolveAndPersistUri(pickerResult.assets[0].uri, ext);
-      }
-
-      // Demo mode — just show the local URI, no cloud upload
-      if (!isSupabaseConfigured) {
-        setMemorials((cur) =>
-          cur.map((m) =>
-            m.id === memorialId
-              ? { ...m, [mediaType]: [...(m[mediaType] || []), fileUri] }
-              : m,
-          ),
-        );
-        return;
       }
 
       // Supabase mode — upload first, then add cloud URL to state
