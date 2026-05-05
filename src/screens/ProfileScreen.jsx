@@ -316,7 +316,7 @@ export default function ProfileScreen({ navigation, route }) {
                   ]}
                   onError={() => {}}
                 />
-              ))}{" "}
+              ))}
               <LinearGradient
                 colors={["transparent", "rgba(0,0,0,0.35)"]}
                 style={styles.photoGradient}

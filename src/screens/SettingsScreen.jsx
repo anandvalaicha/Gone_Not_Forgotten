@@ -7,12 +7,12 @@ import {
   Switch,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
 } from "react-native";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { settingsService } from "../services";
 import { Colors } from "../theme/colors";
 import AppLogo from "../components/AppLogo";
+import StatusBanner from "../components/StatusBanner";
 
 export default function SettingsScreen({ navigation }) {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -38,11 +38,15 @@ export default function SettingsScreen({ navigation }) {
     );
   }
 
+  const [banner, setBanner] = useState(null);
+
   const updateSetting = async (key, value, setter) => {
     setter(value);
+    setBanner({ type: "success", text: "Setting saved." });
     const result = await settingsService.updateSetting(key, value);
     if (!result.success) {
-      Alert.alert("Save failed", result.error || "Could not save settings.");
+      setter(!value); // revert toggle
+      setBanner({ type: "error", text: result.error || "Could not save settings. Please try again." });
     }
   };
 
@@ -63,6 +67,7 @@ export default function SettingsScreen({ navigation }) {
         <Text style={[styles.title, { marginLeft: 8 }]}>Settings</Text>
       </View>
       <ScrollView contentContainerStyle={styles.content}>
+        <StatusBanner type={banner?.type} message={banner?.text} />
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Profile Settings</Text>
           <View style={styles.settingRow}>

@@ -68,7 +68,39 @@ export const memorialService = {
     return { success: true };
   },
 
-  // Fetch another user's public profile + their memorials for the QR scan view
+  // Save a Pluk QR post (description + media references) keyed by plukId.
+  savePlukPost: async (plukId, userId, { description, photos, videos, audios }) => {
+    if (!isSupabaseConfigured) return { success: false, error: 'Supabase is not configured.' };
+    const { error } = await supabase.from('pluk_posts').upsert(
+      {
+        id: plukId,
+        user_id: userId,
+        description: description || null,
+        photos: photos || [],
+        videos: videos || [],
+        audios: audios || [],
+      },
+      { onConflict: 'id' },
+    );
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  },
+
+  // Fetch a Pluk QR post by its plukId (public read).
+  getPlukPost: async (plukId) => {
+    if (!isSupabaseConfigured) return { success: false, error: 'Supabase is not configured.' };
+    const { data, error } = await supabase
+      .from('pluk_posts')
+      .select('*')
+      .eq('id', plukId)
+      .single();
+    if (error) return { success: false, error: error.message };
+    return { success: true, plukPost: data };
+  },
+
+  // Fetch another user's public profile + their memorials for the QR scan view.
+  // Always returns success=true so the scanner shows something even if the
+  // profiles row doesn't exist yet (user signed up before the profiles table).
   getPublicProfile: async (userId) => {
     if (!isSupabaseConfigured) return { success: false, error: 'Not configured.' };
 
@@ -81,10 +113,7 @@ export const memorialService = {
         .order('created_at', { ascending: false }),
     ]);
 
-    if (profileRes.error && !profileRes.data) {
-      return { success: false, error: profileRes.error.message };
-    }
-
+    // Profile row is optional — we can still show memorials without it
     const p = profileRes.data || {};
     return {
       success: true,
@@ -93,17 +122,17 @@ export const memorialService = {
         displayName:
           p.display_name ||
           [p.first_name, p.last_name].filter(Boolean).join(' ') ||
-          'Unknown User',
-        bio:      p.bio      || '',
+          'User',
+        bio:      p.bio       || '',
         photoURL: p.photo_url || null,
         memorials: (memorialsRes.data || []).map((m) => ({
           id:          m.id,
           title:       m.title,
           description: m.description,
           createdAt:   new Date(m.created_at),
-          photos:      m.photos  || [],
-          videos:      m.videos  || [],
-          audios:      m.audios  || [],
+          photos:      m.photos || [],
+          videos:      m.videos || [],
+          audios:      m.audios || [],
         })),
       },
     };

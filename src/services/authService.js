@@ -86,6 +86,8 @@ export const authService = {
     if (error) return { success: false, error: error.message };
     const user = normalizeUser(data.user);
     currentUser = user;
+    // Sync public profile so this user is discoverable via QR scan
+    if (data.user?.id) syncProfile(data.user.id, data.user.user_metadata || {});
     return { success: true, user };
   },
 

@@ -5,6 +5,34 @@
 -- ============================================================
 
 
+-- ── 0. Profiles table (public user info, readable by anyone) ─
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id           UUID        PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  display_name TEXT,
+  first_name   TEXT,
+  last_name    TEXT,
+  bio          TEXT,
+  photo_url    TEXT,
+  age          TEXT,
+  gender       TEXT,
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Anyone can read profiles"        ON public.profiles;
+DROP POLICY IF EXISTS "Users can upsert own profile"    ON public.profiles;
+
+CREATE POLICY "Anyone can read profiles"
+  ON public.profiles FOR SELECT
+  USING (true);
+
+CREATE POLICY "Users can upsert own profile"
+  ON public.profiles FOR ALL
+  USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
+
+
 -- ── 1. Memorials table ───────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.memorials (
   id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -108,3 +136,37 @@ CREATE POLICY "Authenticated users can delete memorials"
     bucket_id = 'memorials'
     AND auth.role() = 'authenticated'
   );
+
+
+-- ── 5. Pluk posts table ──────────────────────────────────────
+-- Stores the content of a Pluk QR (description + media) keyed by pluk_id.
+-- Public read so anyone who scans the QR can view the post.
+CREATE TABLE IF NOT EXISTS public.pluk_posts (
+  id          TEXT        PRIMARY KEY,          -- the pluk-<timestamp> id encoded in the QR
+  user_id     UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  description TEXT,
+  photos      TEXT[]      NOT NULL DEFAULT '{}',
+  videos      TEXT[]      NOT NULL DEFAULT '{}',
+  audios      TEXT[]      NOT NULL DEFAULT '{}',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS pluk_posts_user_id_idx ON public.pluk_posts (user_id);
+
+ALTER TABLE public.pluk_posts ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Anyone can read pluk posts"       ON public.pluk_posts;
+DROP POLICY IF EXISTS "Users can insert own pluk posts"  ON public.pluk_posts;
+DROP POLICY IF EXISTS "Users can delete own pluk posts"  ON public.pluk_posts;
+
+CREATE POLICY "Anyone can read pluk posts"
+  ON public.pluk_posts FOR SELECT
+  USING (true);
+
+CREATE POLICY "Users can insert own pluk posts"
+  ON public.pluk_posts FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own pluk posts"
+  ON public.pluk_posts FOR DELETE
+  USING (auth.uid() = user_id);

@@ -65,7 +65,9 @@ export default function VideoPlayerModal({ uri, onClose }) {
       endSub.remove();
       statusSub?.remove?.();
       clearTimeout(hideTimer.current);
-      player.pause();
+      try {
+        player.pause();
+      } catch (_) {}
     };
   }, []);
 

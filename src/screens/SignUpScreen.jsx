@@ -5,7 +5,6 @@ import {
   StyleSheet,
   TextInput,
   TouchableOpacity,
-  Alert,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
@@ -13,6 +12,7 @@ import {
 import { authService } from "../services";
 import { Colors } from "../theme/colors";
 import AppLogo from "../components/AppLogo";
+import StatusBanner from "../components/StatusBanner";
 
 const GENDERS = ["Male", "Female", "Non-binary", "Prefer not to say"];
 
@@ -26,6 +26,7 @@ export default function SignUpScreen({ navigation }) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [banner, setBanner] = useState(null);
 
   const lastNameRef = useRef(null);
   const emailRef = useRef(null);
@@ -34,28 +35,22 @@ export default function SignUpScreen({ navigation }) {
   const passwordRef = useRef(null);
   const confirmPasswordRef = useRef(null);
 
+  const clearBanner = () => setBanner(null);
+
   const onSignUp = async () => {
-    if (
-      !firstName.trim() ||
-      !lastName.trim() ||
-      !email.trim() ||
-      !password ||
-      !confirmPassword
-    ) {
-      Alert.alert(
-        "Validation",
-        "First name, last name, email and password are required.",
-      );
+    if (!firstName.trim() || !lastName.trim() || !email.trim() || !password || !confirmPassword) {
+      setBanner({ type: "error", text: "First name, last name, email and password are required." });
       return;
     }
     if (password !== confirmPassword) {
-      Alert.alert("Validation", "Passwords do not match.");
+      setBanner({ type: "error", text: "Passwords do not match." });
       return;
     }
     if (age && (isNaN(Number(age)) || Number(age) < 1 || Number(age) > 120)) {
-      Alert.alert("Validation", "Please enter a valid age.");
+      setBanner({ type: "error", text: "Please enter a valid age (1–120)." });
       return;
     }
+    clearBanner();
     setLoading(true);
     const result = await authService.signUp(email.trim(), password, {
       firstName: firstName.trim(),
@@ -66,7 +61,7 @@ export default function SignUpScreen({ navigation }) {
     });
     setLoading(false);
     if (!result.success) {
-      Alert.alert("Sign up failed", result.error || "Please check your inputs");
+      setBanner({ type: "error", text: result.error || "Could not create account. Please check your details." });
     }
   };
 
@@ -209,8 +204,9 @@ export default function SignUpScreen({ navigation }) {
             onSubmitEditing={onSignUp}
           />
 
+          <StatusBanner type={banner?.type} message={banner?.text} />
           <TouchableOpacity
-            style={styles.button}
+            style={[styles.button, loading && { opacity: 0.7 }]}
             onPress={onSignUp}
             disabled={loading}
           >

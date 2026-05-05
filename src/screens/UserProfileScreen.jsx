@@ -10,14 +10,87 @@ import {
   Dimensions,
   Alert,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { LinearGradient } from "expo-linear-gradient";
+import {
+  useAudioPlayer,
+  useAudioPlayerStatus,
+  setAudioModeAsync,
+} from "expo-audio";
 import { memorialService, authService } from "../services";
 import { isSupabaseConfigured } from "../config/supabase";
 import { Colors } from "../theme/colors";
 import AppLogo from "../components/AppLogo";
+import VideoPlayerModal from "../components/VideoPlayerModal";
 
 const { width: SCREEN_W } = Dimensions.get("window");
+
+// ── Inline audio player for pluk banner ──────────────────────────────────────
+function PlukAudioItem({ uri, index }) {
+  useEffect(() => {
+    setAudioModeAsync({ playsInSilentModeIOS: true }).catch(() => {});
+  }, []);
+  const player = useAudioPlayer({ uri });
+  const status = useAudioPlayerStatus(player);
+  const toggle = () => {
+    if (status.playing) {
+      player.pause();
+    } else {
+      const atEnd =
+        status.currentTime >= (status.duration || 0) - 0.1 &&
+        (status.duration || 0) > 0;
+      if (atEnd) player.seekTo(0);
+      player.play();
+    }
+  };
+  const fmt = (s) => {
+    const t = Math.round(s || 0);
+    return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
+  };
+  return (
+    <TouchableOpacity
+      onPress={toggle}
+      activeOpacity={0.8}
+      style={plukAudioStyles.row}
+    >
+      <View style={plukAudioStyles.playBtn}>
+        <MaterialCommunityIcons
+          name={status.playing ? "pause" : "play"}
+          size={18}
+          color="#fff"
+        />
+      </View>
+      <Text style={plukAudioStyles.label} numberOfLines={1}>
+        Audio {index + 1}
+      </Text>
+      <Text style={plukAudioStyles.time}>{fmt(status.currentTime)}</Text>
+    </TouchableOpacity>
+  );
+}
+const plukAudioStyles = StyleSheet.create({
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#e2f1ea",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginTop: 8,
+    gap: 10,
+  },
+  playBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#3d7a62",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  label: { flex: 1, fontSize: 13, color: Colors.ink700, fontWeight: "500" },
+  time: { fontSize: 12, color: Colors.ink500 },
+});
+// ─────────────────────────────────────────────────────────────────────────────
 const MONTHS = [
   "Jan",
   "Feb",
@@ -59,14 +132,46 @@ const DEMO_USER_PROFILE = {
 };
 
 export default function UserProfileScreen({ navigation, route }) {
-  const { userId, access } = route.params || {};
+  const { userId, access, plukId } = route.params || {};
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("Memories");
+  const [plukPost, setPlukPost] = useState(null);
+  const [plukLoading, setPlukLoading] = useState(!!plukId);
+  const [plukError, setPlukError] = useState(false);
+  const [videoUri, setVideoUri] = useState(null);
 
   useEffect(() => {
     loadUserProfile();
+    if (plukId) loadPlukPost();
   }, [userId]);
+
+  const loadPlukPost = async () => {
+    setPlukLoading(true);
+    setPlukError(false);
+
+    // 1. Try Supabase first (works cross-device)
+    const result = await memorialService.getPlukPost(plukId);
+    if (result.success && result.plukPost) {
+      setPlukPost(result.plukPost);
+      setPlukLoading(false);
+      return;
+    }
+
+    // 2. Fall back to AsyncStorage (same-device scan)
+    try {
+      const raw = await AsyncStorage.getItem(`pluk_${plukId}`);
+      if (raw) {
+        setPlukPost(JSON.parse(raw));
+        setPlukLoading(false);
+        return;
+      }
+    } catch (_) {}
+
+    // Both failed — nothing to show
+    setPlukError(true);
+    setPlukLoading(false);
+  };
 
   const isSectionAllowed = (section) => {
     if (!userProfile) return false;
@@ -97,15 +202,32 @@ export default function UserProfileScreen({ navigation, route }) {
       }
 
       const { profile } = result;
+
+      // If the profiles table has no row yet (display_name is still the
+      // default 'User' fallback), supplement with the signed-in user's local
+      // auth data so the name is never blank on your own profile.
+      const currentUser = authService.getCurrentUser();
+      const isSelf = currentUser?.uid === userId;
+      const resolvedName =
+        profile.displayName !== "User"
+          ? profile.displayName
+          : isSelf
+            ? currentUser?.displayName ||
+              currentUser?.email?.split("@")[0] ||
+              "User"
+            : "User";
+      const resolvedAvatar =
+        profile.photoURL || (isSelf ? currentUser?.photoURL : null);
+
       setUserProfile({
-        userId:       profile.userId,
-        displayName:  profile.displayName,
-        bio:          profile.bio,
-        avatar:       profile.photoURL,
-        showBio:      true,
+        userId: profile.userId,
+        displayName: resolvedName,
+        bio: profile.bio,
+        avatar: resolvedAvatar,
+        showBio: true,
         showMemories: true,
-        showGallery:  true,
-        memorials:    profile.memorials,
+        showGallery: true,
+        memorials: profile.memorials,
       });
       setLoading(false);
     } catch (error) {
@@ -300,12 +422,16 @@ export default function UserProfileScreen({ navigation, route }) {
             style={styles.backBtn}
             onPress={() => navigation.goBack()}
           >
-            <MaterialCommunityIcons name="arrow-left" size={20} color="#fff" />
+            <MaterialCommunityIcons
+              name="arrow-left"
+              size={20}
+              color="#3d7a62"
+            />
           </TouchableOpacity>
 
           {/* App logo */}
           <View style={{ position: "absolute", top: 56, right: 20 }}>
-            <AppLogo size={32} tintColor="#fff" />
+            <AppLogo size={32} tintColor="#3d7a62" />
           </View>
 
           {/* Decorative green arc */}
@@ -345,46 +471,167 @@ export default function UserProfileScreen({ navigation, route }) {
           )}
         </View>
 
-        {/* Content */}
-        <View style={styles.sheet}>
-          {/* Tab bar */}
-          <View style={styles.tabBar}>
-            {["Memories", "Gallery"].map((tab) => (
-              <TouchableOpacity
-                key={tab}
-                style={[
-                  styles.tabBtn,
-                  activeTab === tab && styles.tabBtnActive,
-                ]}
-                onPress={() => setActiveTab(tab)}
-              >
-                {activeTab === tab ? (
-                  <View style={styles.tabBtnActiveInner}>
-                    <Text style={styles.tabLabelActive}>{tab}</Text>
-                  </View>
-                ) : (
-                  <Text style={styles.tabLabel}>{tab}</Text>
+        {/* Pluk Post — shown when scanned from a Pluk QR */}
+        {plukId && (
+          <View style={styles.plukBanner}>
+            {/* Header */}
+            <View style={styles.plukBannerHeader}>
+              <MaterialCommunityIcons
+                name="qrcode-scan"
+                size={18}
+                color="#3d7a62"
+              />
+              <Text style={styles.plukBannerTitle}>Pluk Message</Text>
+            </View>
+
+            {/* Loading state */}
+            {plukLoading && (
+              <ActivityIndicator
+                size="small"
+                color={Colors.green700}
+                style={{ marginVertical: 16 }}
+              />
+            )}
+
+            {/* Error state */}
+            {!plukLoading && plukError && (
+              <View style={styles.plukErrorBox}>
+                <MaterialCommunityIcons
+                  name="cloud-off-outline"
+                  size={28}
+                  color={Colors.ink300}
+                />
+                <Text style={styles.plukErrorText}>
+                  Could not load the shared content.{"\n"}This link may only
+                  work on the original device.
+                </Text>
+              </View>
+            )}
+
+            {/* Loaded content */}
+            {!plukLoading && plukPost && (
+              <>
+                {!!plukPost.description && (
+                  <Text style={styles.plukBannerDesc}>
+                    {plukPost.description}
+                  </Text>
                 )}
-              </TouchableOpacity>
-            ))}
-          </View>
 
-          {/* Green accent line */}
-          <View style={styles.accentLine}>
-            <LinearGradient
-              colors={["transparent", "#6cab90", "transparent"]}
-              style={styles.accentLineGrad}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
+                {plukPost.photos?.length > 0 && (
+                  <>
+                    <Text style={styles.plukSectionLabel}>Photos</Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      style={{ marginTop: 6 }}
+                    >
+                      {plukPost.photos.map((uri, i) => (
+                        <Image
+                          key={i}
+                          source={{ uri }}
+                          style={styles.plukThumb}
+                        />
+                      ))}
+                    </ScrollView>
+                  </>
+                )}
+
+                {plukPost.videos?.length > 0 && (
+                  <>
+                    <Text style={styles.plukSectionLabel}>Videos</Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      style={{ marginTop: 6 }}
+                    >
+                      {plukPost.videos.map((uri, i) => (
+                        <TouchableOpacity
+                          key={i}
+                          onPress={() => setVideoUri(uri)}
+                          style={styles.plukVideoThumb}
+                        >
+                          <MaterialCommunityIcons
+                            name="play-circle"
+                            size={40}
+                            color="rgba(255,255,255,0.9)"
+                          />
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </>
+                )}
+
+                {plukPost.audios?.length > 0 && (
+                  <>
+                    <Text style={styles.plukSectionLabel}>Audio</Text>
+                    {plukPost.audios.map((uri, i) => (
+                      <PlukAudioItem key={i} uri={uri} index={i} />
+                    ))}
+                  </>
+                )}
+              </>
+            )}
+          </View>
+        )}
+
+        {/* Video modal */}
+        {videoUri && (
+          <VideoPlayerModal uri={videoUri} onClose={() => setVideoUri(null)} />
+        )}
+
+        {/* When viewing via Pluk QR — show only curated content, not the full profile */}
+        {plukId ? (
+          <View style={styles.plukFooter}>
+            <MaterialCommunityIcons
+              name="shield-check-outline"
+              size={16}
+              color={Colors.green700}
             />
+            <Text style={styles.plukFooterText}>
+              This is a curated share — only selected content is shown
+            </Text>
           </View>
+        ) : (
+          <View style={styles.sheet}>
+            {/* Tab bar */}
+            <View style={styles.tabBar}>
+              {["Memories", "Gallery"].map((tab) => (
+                <TouchableOpacity
+                  key={tab}
+                  style={[
+                    styles.tabBtn,
+                    activeTab === tab && styles.tabBtnActive,
+                  ]}
+                  onPress={() => setActiveTab(tab)}
+                >
+                  {activeTab === tab ? (
+                    <View style={styles.tabBtnActiveInner}>
+                      <Text style={styles.tabLabelActive}>{tab}</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.tabLabel}>{tab}</Text>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
 
-          {/* Tab content */}
-          <View style={styles.tabContent}>
-            {activeTab === "Memories" && renderMemories()}
-            {activeTab === "Gallery" && renderGallery()}
+            {/* Green accent line */}
+            <View style={styles.accentLine}>
+              <LinearGradient
+                colors={["transparent", "#6cab90", "transparent"]}
+                style={styles.accentLineGrad}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+              />
+            </View>
+
+            {/* Tab content */}
+            <View style={styles.tabContent}>
+              {activeTab === "Memories" && renderMemories()}
+              {activeTab === "Gallery" && renderGallery()}
+            </View>
           </View>
-        </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -510,6 +757,93 @@ const styles = StyleSheet.create({
     marginTop: 8,
     lineHeight: 22,
     paddingHorizontal: 32,
+  },
+
+  // Pluk post banner
+  plukBanner: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    backgroundColor: "#f0f7f4",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#c8e6d8",
+    padding: 16,
+  },
+  plukBannerHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 6,
+  },
+  plukBannerTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#3d7a62",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  plukBannerDesc: {
+    fontSize: 15,
+    color: Colors.ink700,
+    lineHeight: 22,
+    marginTop: 4,
+  },
+  plukErrorBox: {
+    alignItems: "center",
+    paddingVertical: 16,
+    gap: 10,
+  },
+  plukErrorText: {
+    fontSize: 13,
+    color: Colors.ink400,
+    textAlign: "center",
+    lineHeight: 19,
+  },
+  plukSectionLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#3d7a62",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginTop: 12,
+  },
+  plukThumb: {
+    width: 90,
+    height: 90,
+    borderRadius: 10,
+    marginRight: 8,
+  },
+  plukVideoThumb: {
+    width: 90,
+    height: 90,
+    borderRadius: 10,
+    marginRight: 8,
+    backgroundColor: "#1c1c1e",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  // Pluk-only footer note
+  plukFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 40,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: "#f0f7f4",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#c8e6d8",
+  },
+  plukFooterText: {
+    fontSize: 13,
+    color: Colors.green700,
+    fontWeight: "500",
+    flexShrink: 1,
   },
 
   // Sheet

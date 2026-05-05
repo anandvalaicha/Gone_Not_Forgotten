@@ -28,6 +28,7 @@ import { memorialService, storageService } from "../services";
 import { isSupabaseConfigured } from "../config/supabase";
 import { Colors } from "../theme/colors";
 import AppLogo from "../components/AppLogo";
+import StatusBanner from "../components/StatusBanner";
 
 function AudioPlayer({ uri }) {
   useEffect(() => {
@@ -157,6 +158,8 @@ export default function MemorialDetailScreen({ route, navigation }) {
   const [activeTab, setActiveTab] = useState("Memories");
   const [videoModal, setVideoModal] = useState({ visible: false, uri: null });
   const [menuVisible, setMenuVisible] = useState(false);
+  const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [editModal, setEditModal] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editDesc, setEditDesc] = useState("");
@@ -164,6 +167,7 @@ export default function MemorialDetailScreen({ route, navigation }) {
   const [editVideos, setEditVideos] = useState([]);
   const [editAudios, setEditAudios] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [editBanner, setEditBanner] = useState(null);
 
   // ── Pick new media inside the edit modal ───────────────────────────────────
   const pickEditMedia = async (mediaType) => {
@@ -218,32 +222,25 @@ export default function MemorialDetailScreen({ route, navigation }) {
 
   const handleDelete = () => {
     setMenuVisible(false);
-    Alert.alert(
-      "Delete Memorial",
-      "Are you sure you want to delete this memorial? This cannot be undone.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            const result = await memorialService.deleteMemorial(memorialId);
-            if (result.success) {
-              navigation.goBack();
-            } else {
-              Alert.alert(
-                "Error",
-                result.error || "Could not delete memorial.",
-              );
-            }
-          },
-        },
-      ],
-    );
+    setDeleteConfirmVisible(true);
+  };
+
+  const confirmDelete = async () => {
+    setDeleting(true);
+    const result = await memorialService.deleteMemorial(memorialId);
+    setDeleting(false);
+    if (result.success) {
+      setDeleteConfirmVisible(false);
+      navigation.goBack();
+    } else {
+      setDeleteConfirmVisible(false);
+      Alert.alert("Error", result.error || "Could not delete memory.");
+    }
   };
 
   const handleEdit = () => {
     setMenuVisible(false);
+    setEditBanner(null);
     setEditTitle(memorial?.title || "");
     setEditDesc(memorial?.description || "");
     // Wrap existing URLs as { uri, isNew: false } objects
@@ -261,9 +258,10 @@ export default function MemorialDetailScreen({ route, navigation }) {
 
   const handleSaveEdit = async () => {
     if (!editTitle.trim()) {
-      Alert.alert("Required", "Title cannot be empty.");
+      setEditBanner({ type: "error", text: "Title cannot be empty." });
       return;
     }
+    setEditBanner(null);
     setSaving(true);
     try {
       // Upload any new files first
@@ -311,7 +309,7 @@ export default function MemorialDetailScreen({ route, navigation }) {
       });
 
       if (!result.success) {
-        Alert.alert("Error", result.error || "Could not save changes.");
+        setEditBanner({ type: "error", text: result.error || "Could not save changes. Please try again." });
         return;
       }
 
@@ -323,9 +321,10 @@ export default function MemorialDetailScreen({ route, navigation }) {
         videos: finalVideos.filter(Boolean),
         audios: finalAudios.filter(Boolean),
       }));
-      setEditModal(false);
+      setEditBanner({ type: "success", text: "Changes saved successfully!" });
+      setTimeout(() => setEditModal(false), 1200);
     } catch (e) {
-      Alert.alert("Error", e.message || "Could not save changes.");
+      setEditBanner({ type: "error", text: e.message || "Could not save changes. Please try again." });
     } finally {
       setSaving(false);
     }
@@ -860,7 +859,8 @@ export default function MemorialDetailScreen({ route, navigation }) {
               </Text>
             )}
 
-            {/* Save */}
+            {/* Status banner + Save */}
+            <StatusBanner type={editBanner?.type} message={editBanner?.text} />
             <TouchableOpacity
               style={[styles.editSaveBtn, saving && { opacity: 0.6 }]}
               onPress={handleSaveEdit}
@@ -872,6 +872,63 @@ export default function MemorialDetailScreen({ route, navigation }) {
             </TouchableOpacity>
           </ScrollView>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Delete confirmation popup */}
+      <Modal
+        visible={deleteConfirmVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => !deleting && setDeleteConfirmVisible(false)}
+      >
+        <View style={styles.deleteOverlay}>
+          <View style={styles.deleteCard}>
+            {/* Layered icon rings */}
+            <View style={styles.deleteRingOuter}>
+              <View style={styles.deleteRingInner}>
+                <MaterialCommunityIcons
+                  name="trash-can-outline"
+                  size={34}
+                  color="#C0392B"
+                />
+              </View>
+            </View>
+
+            <Text style={styles.deleteTitle}>Delete Memory?</Text>
+            <Text style={styles.deleteSubtitle}>
+              Once deleted, this memory is gone forever and{"\n"}cannot be recovered.
+            </Text>
+
+            <View style={styles.deleteDivider} />
+
+            {/* Stacked buttons */}
+            <TouchableOpacity
+              style={[styles.deleteConfirmBtn, deleting && { opacity: 0.55 }]}
+              onPress={confirmDelete}
+              disabled={deleting}
+              activeOpacity={0.8}
+            >
+              <MaterialCommunityIcons
+                name={deleting ? "loading" : "trash-can-outline"}
+                size={18}
+                color={Colors.white}
+                style={{ marginRight: 8 }}
+              />
+              <Text style={styles.deleteConfirmText}>
+                {deleting ? "Deleting..." : "Yes, Delete It"}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.deleteCancelBtn}
+              onPress={() => setDeleteConfirmVisible(false)}
+              disabled={deleting}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.deleteCancelText}>Keep Memory</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
     </ScrollView>
   );
@@ -1320,5 +1377,100 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 18,
     fontWeight: "700",
+  },
+
+  // Delete confirmation popup
+  deleteOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(30,20,15,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 28,
+  },
+  deleteCard: {
+    width: "100%",
+    backgroundColor: Colors.cardBg,
+    borderRadius: 28,
+    paddingHorizontal: 28,
+    paddingTop: 36,
+    paddingBottom: 28,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.22,
+    shadowRadius: 32,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 16,
+    borderWidth: 1,
+    borderColor: Colors.ink100,
+  },
+  deleteRingOuter: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: "rgba(192,57,43,0.08)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 22,
+  },
+  deleteRingInner: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "rgba(192,57,43,0.14)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  deleteTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: Colors.ink700,
+    marginBottom: 10,
+    letterSpacing: -0.3,
+  },
+  deleteSubtitle: {
+    fontSize: 14,
+    color: Colors.ink500,
+    textAlign: "center",
+    lineHeight: 21,
+    marginBottom: 0,
+  },
+  deleteDivider: {
+    width: "100%",
+    height: 1,
+    backgroundColor: Colors.ink100,
+    marginVertical: 24,
+  },
+  deleteConfirmBtn: {
+    width: "100%",
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 15,
+    borderRadius: 14,
+    backgroundColor: "#C0392B",
+    marginBottom: 12,
+    shadowColor: "#C0392B",
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+  },
+  deleteConfirmText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: Colors.white,
+    letterSpacing: 0.2,
+  },
+  deleteCancelBtn: {
+    width: "100%",
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: Colors.ink100,
+    alignItems: "center",
+  },
+  deleteCancelText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: Colors.ink600,
   },
 });

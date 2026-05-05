@@ -5,34 +5,37 @@ import {
   StyleSheet,
   TextInput,
   TouchableOpacity,
-  Alert,
 } from "react-native";
 import * as Linking from "expo-linking";
 import { authService } from "../services";
 import { Colors } from "../theme/colors";
 import AppLogo from "../components/AppLogo";
+import StatusBanner from "../components/StatusBanner";
 
 export default function ForgotPasswordScreen({ navigation }) {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
+  const [banner, setBanner] = useState(null);
+  const [sent, setSent] = useState(false);
 
   const onSendReset = async () => {
     if (!email.trim()) {
-      Alert.alert("Validation", "Please enter your email address.");
+      setBanner({ type: "error", text: "Please enter your email address." });
       return;
     }
+    setBanner(null);
     setLoading(true);
     const redirectTo = Linking.createURL("reset-password");
     const result = await authService.resetPassword(email.trim(), redirectTo);
     setLoading(false);
     if (result.success) {
-      Alert.alert(
-        "Check your email",
-        "A password reset link has been sent to " + email.trim() + ". Follow the link to set a new password.",
-        [{ text: "Back to Sign In", onPress: () => navigation.navigate("SignIn") }],
-      );
+      setSent(true);
+      setBanner({
+        type: "success",
+        text: `Reset link sent to ${email.trim()}. Check your inbox and follow the link to set a new password.`,
+      });
     } else {
-      Alert.alert("Failed", result.error || "Could not send reset email. Please try again.");
+      setBanner({ type: "error", text: result.error || "Could not send reset email. Please try again." });
     }
   };
 
@@ -56,24 +59,31 @@ export default function ForgotPasswordScreen({ navigation }) {
           autoCapitalize="none"
           keyboardType="email-address"
           value={email}
-          onChangeText={setEmail}
+          onChangeText={(v) => { setEmail(v); if (banner?.type === "error") setBanner(null); }}
+          editable={!sent}
         />
 
-        <TouchableOpacity
-          style={styles.button}
-          onPress={onSendReset}
-          disabled={loading}
-        >
-          <Text style={styles.buttonText}>
-            {loading ? "Sending..." : "Send Reset Link"}
-          </Text>
-        </TouchableOpacity>
+        <StatusBanner type={banner?.type} message={banner?.text} />
+
+        {!sent ? (
+          <TouchableOpacity
+            style={[styles.button, loading && { opacity: 0.7 }]}
+            onPress={onSendReset}
+            disabled={loading}
+          >
+            <Text style={styles.buttonText}>
+              {loading ? "Sending..." : "Send Reset Link"}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
 
         <TouchableOpacity
           style={styles.backRow}
-          onPress={() => navigation.goBack()}
+          onPress={() => navigation.navigate("SignIn")}
         >
-          <Text style={styles.backText}>Back to Sign In</Text>
+          <Text style={styles.backText}>
+            {sent ? "Back to Sign In" : "Back to Sign In"}
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -148,7 +158,7 @@ const styles = StyleSheet.create({
   },
   backRow: {
     alignItems: "center",
-    marginTop: 4,
+    marginTop: 8,
   },
   backText: {
     color: Colors.green700,

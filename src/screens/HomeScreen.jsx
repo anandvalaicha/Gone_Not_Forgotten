@@ -36,6 +36,7 @@ import { isSupabaseConfigured } from "../config/supabase";
 import { memorialService, authService, storageService } from "../services";
 import { Colors } from "../theme/colors";
 import AppLogo from "../components/AppLogo";
+import StatusBanner from "../components/StatusBanner";
 
 const MONTHS = [
   "Jan",
@@ -317,6 +318,7 @@ export default function HomeScreen({ navigation }) {
   const [draftPhotos, setDraftPhotos] = useState([]);
   const [draftVideos, setDraftVideos] = useState([]);
   const [draftAudios, setDraftAudios] = useState([]);
+  const [modalBanner, setModalBanner] = useState(null);
   const [videoModal, setVideoModal] = useState({ visible: false, uri: null });
 
   // Prevents useFocusEffect from wiping upload results while an upload is in progress
@@ -547,24 +549,24 @@ export default function HomeScreen({ navigation }) {
     setDraftPhotos([]);
     setDraftVideos([]);
     setDraftAudios([]);
+    setModalBanner(null);
     setShowCreateModal(false);
   };
 
   const createMemorial = async () => {
     if (!title.trim() || !description.trim()) {
-      Alert.alert("Validation", "Please fill in name and description.");
+      setModalBanner({ type: "error", text: "Please fill in the name and description." });
       return;
     }
+    setModalBanner(null);
     setLoading(true);
     uploadInProgress.current = true;
 
     try {
-      // Capture drafts before any state changes
       const photosToUpload = [...draftPhotos];
       const videosToUpload = [...draftVideos];
       const audiosToUpload = [...draftAudios];
 
-      // Step 1 — create DB record first (empty media arrays; filled after upload)
       const createResult = await memorialService.createMemorial(userId, {
         title,
         description,
@@ -574,20 +576,15 @@ export default function HomeScreen({ navigation }) {
         audios: [],
       });
       if (!createResult.success) {
-        Alert.alert(
-          "Could not create memorial",
-          createResult.error || "Please check your connection and try again.",
-        );
+        setModalBanner({ type: "error", text: createResult.error || "Could not create memory. Please check your connection." });
         return;
       }
 
       const memorialId = createResult.id;
       const uploadErrors = [];
 
-      // Step 2 — upload files to Supabase Storage
       const uploadOne = async (uri, mediaKind) => {
         const rawExt = uri.split(".").pop().split("?")[0].toLowerCase();
-        // blob: and data: URIs have no real extension — use fallback
         const ext =
           (rawExt.length <= 5 ? rawExt : null) ||
           (mediaKind === "photos"
@@ -599,10 +596,7 @@ export default function HomeScreen({ navigation }) {
         const res = await storageService.uploadFile(uri, fileName, memorialId);
         if (!res.success) {
           uploadErrors.push(res.error || "Unknown upload error");
-          console.warn(
-            `[createMemorial] ${mediaKind} upload failed:`,
-            res.error,
-          );
+          console.warn(`[createMemorial] ${mediaKind} upload failed:`, res.error);
         }
         return res.success ? res.url : null;
       };
@@ -617,18 +611,15 @@ export default function HomeScreen({ navigation }) {
       const cleanVideos = videoUrls.filter(Boolean);
       const cleanAudios = audioUrls.filter(Boolean);
 
-      // Step 3 — persist cloud URLs back to DB
       if (cleanPhotos.length || cleanVideos.length || cleanAudios.length) {
         const upd = await memorialService.updateMemorial(memorialId, {
           photos: cleanPhotos,
           videos: cleanVideos,
           audios: cleanAudios,
         });
-        if (!upd.success)
-          console.warn("[createMemorial] DB update failed:", upd.error);
+        if (!upd.success) console.warn("[createMemorial] DB update failed:", upd.error);
       }
 
-      // Step 4 — add to local state so it appears immediately
       setMemorials((cur) => [
         {
           id: memorialId,
@@ -642,21 +633,22 @@ export default function HomeScreen({ navigation }) {
         },
         ...cur,
       ]);
-      resetModal();
 
-      const total =
-        photosToUpload.length + videosToUpload.length + audiosToUpload.length;
-      const failed =
-        total - (cleanPhotos.length + cleanVideos.length + cleanAudios.length);
+      const total = photosToUpload.length + videosToUpload.length + audiosToUpload.length;
+      const failed = total - (cleanPhotos.length + cleanVideos.length + cleanAudios.length);
+
       if (failed > 0) {
-        Alert.alert(
-          failed === total ? "Media Upload Failed" : "Partial Upload",
-          uploadErrors[0] ||
-            `${failed} of ${total} file(s) could not be uploaded.\n\nCheck that the Supabase "memorials" storage bucket exists and has upload policies enabled.`,
-        );
+        setModalBanner({
+          type: "error",
+          text: `Memory saved but ${failed} of ${total} file(s) could not be uploaded. Check your Supabase storage bucket settings.`,
+        });
+        // Don't close modal so user can see the error
+      } else {
+        setModalBanner({ type: "success", text: "Memory saved successfully!" });
+        setTimeout(() => resetModal(), 1200);
       }
     } catch (error) {
-      Alert.alert("Error", error.message || "Could not save memorial");
+      setModalBanner({ type: "error", text: error.message || "Could not save memory. Please try again." });
     } finally {
       uploadInProgress.current = false;
       setLoading(false);
@@ -958,7 +950,7 @@ export default function HomeScreen({ navigation }) {
                     size={20}
                     color={Colors.ink700}
                   />
-                  <Text style={styles.actionLabel}>Generate QR</Text>
+                  <Text style={styles.actionLabel}>Profile QR Code</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.actionBtn, styles.actionBtnSecondary]}
@@ -1180,8 +1172,9 @@ export default function HomeScreen({ navigation }) {
                 </View>
               )}
 
+              <StatusBanner type={modalBanner?.type} message={modalBanner?.text} />
               <TouchableOpacity
-                style={styles.button}
+                style={[styles.button, loading && { opacity: 0.7 }]}
                 onPress={createMemorial}
                 disabled={loading}
               >

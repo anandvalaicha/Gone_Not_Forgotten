@@ -5,7 +5,6 @@ import {
   StyleSheet,
   TextInput,
   TouchableOpacity,
-  Alert,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
@@ -14,6 +13,7 @@ import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { authService } from "../services";
 import { Colors } from "../theme/colors";
 import AppLogo from "../components/AppLogo";
+import StatusBanner from "../components/StatusBanner";
 
 const GENDERS = ["Male", "Female", "Non-binary", "Prefer not to say"];
 
@@ -50,6 +50,7 @@ export default function EditProfileScreen({ navigation, route }) {
   const [showConfirm, setShowConfirm] = useState(false);
 
   const [saving, setSaving] = useState(false);
+  const [banner, setBanner] = useState(null);
 
   const lastNameRef = useRef(null);
   const phoneRef = useRef(null);
@@ -61,31 +62,27 @@ export default function EditProfileScreen({ navigation, route }) {
   const confirmPasswordRef = useRef(null);
 
   const handleSave = async () => {
+    setBanner(null);
+
     if (!firstName.trim() || !lastName.trim()) {
-      Alert.alert("Name required", "Please enter your first and last name.");
+      setBanner({ type: "error", text: "First and last name are required." });
       return;
     }
     if (age && (isNaN(Number(age)) || Number(age) < 1 || Number(age) > 120)) {
-      Alert.alert("Invalid age", "Please enter a valid age between 1 and 120.");
+      setBanner({ type: "error", text: "Please enter a valid age between 1 and 120." });
       return;
     }
     if (showPasswordSection) {
       if (!newPassword) {
-        Alert.alert("Password required", "Please enter a new password.");
+        setBanner({ type: "error", text: "Please enter a new password." });
         return;
       }
       if (newPassword.length < 6) {
-        Alert.alert(
-          "Password too short",
-          "Password must be at least 6 characters.",
-        );
+        setBanner({ type: "error", text: "Password must be at least 6 characters." });
         return;
       }
       if (newPassword !== confirmPassword) {
-        Alert.alert(
-          "Passwords don't match",
-          "New password and confirmation do not match.",
-        );
+        setBanner({ type: "error", text: "New password and confirmation do not match." });
         return;
       }
     }
@@ -105,10 +102,7 @@ export default function EditProfileScreen({ navigation, route }) {
 
     if (!profileResult.success) {
       setSaving(false);
-      Alert.alert(
-        "Save failed",
-        profileResult.error || "Could not update profile.",
-      );
+      setBanner({ type: "error", text: profileResult.error || "Could not update profile. Please try again." });
       return;
     }
 
@@ -116,27 +110,21 @@ export default function EditProfileScreen({ navigation, route }) {
       const pwResult = await authService.changePassword(newPassword);
       if (!pwResult.success) {
         setSaving(false);
-        Alert.alert(
-          "Password update failed",
-          pwResult.error || "Could not change password.",
-        );
+        setBanner({ type: "error", text: pwResult.error || "Profile saved but password could not be changed." });
         return;
       }
     }
 
     setSaving(false);
-    Alert.alert("Profile updated", "Your changes have been saved.", [
-      {
-        text: "OK",
-        onPress: () =>
-          navigation.navigate("Profile", {
-            updatedName: `${firstName.trim()} ${lastName.trim()}`,
-            updatedBio: bio.trim(),
-            updatedBirthYear: birthYear.trim(),
-            updatedDeathYear: deathYear.trim(),
-          }),
-      },
-    ]);
+    setBanner({ type: "success", text: "Profile saved successfully!" });
+    setTimeout(() => {
+      navigation.navigate("Profile", {
+        updatedName: `${firstName.trim()} ${lastName.trim()}`,
+        updatedBio: bio.trim(),
+        updatedBirthYear: birthYear.trim(),
+        updatedDeathYear: deathYear.trim(),
+      });
+    }, 1200);
   };
 
   return (
@@ -410,7 +398,8 @@ export default function EditProfileScreen({ navigation, route }) {
             </View>
           )}
 
-          {/* ── Save Button ───────────────────────────────────────── */}
+          {/* ── Status Banner + Save Button ───────────────────────── */}
+          <StatusBanner type={banner?.type} message={banner?.text} />
           <TouchableOpacity
             style={[styles.button, saving && styles.buttonDisabled]}
             onPress={handleSave}
