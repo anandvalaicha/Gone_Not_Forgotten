@@ -6,3 +6,4 @@ export const AuthContext = createContext(defaultCtx);
 
 export const useSignOut = () => useContext(AuthContext).signOut;
 export const useOnPasswordReset = () => useContext(AuthContext).onPasswordReset;
+

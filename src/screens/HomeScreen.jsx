@@ -99,12 +99,20 @@ function MediaCarousel({ items, onVideoPress }) {
   const { width: screenW } = useWindowDimensions();
   // feedList paddingHorizontal:16 × 2 = 32
   const SLIDE_W = screenW - 32;
+  const scrollRef = useRef(null);
+
+  const goToPage = (idx) => {
+    const clamped = Math.max(0, Math.min(idx, items.length - 1));
+    scrollRef.current?.scrollTo({ x: clamped * SLIDE_W, animated: true });
+    setPage(clamped);
+  };
 
   if (!items || items.length === 0) return null;
 
   return (
     <View style={{ position: "relative" }}>
       <ScrollView
+        ref={scrollRef}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
@@ -165,17 +173,42 @@ function MediaCarousel({ items, onVideoPress }) {
         </View>
       )}
 
-      {/* Dot indicators */}
+      {/* Left / Right arrow buttons */}
+      {items.length > 1 && page > 0 && (
+        <TouchableOpacity
+          style={[carouselStyles.arrowBtn, carouselStyles.arrowLeft]}
+          onPress={() => goToPage(page - 1)}
+          activeOpacity={0.7}
+        >
+          <MaterialCommunityIcons name="chevron-left" size={26} color="#fff" />
+        </TouchableOpacity>
+      )}
+      {items.length > 1 && page < items.length - 1 && (
+        <TouchableOpacity
+          style={[carouselStyles.arrowBtn, carouselStyles.arrowRight]}
+          onPress={() => goToPage(page + 1)}
+          activeOpacity={0.7}
+        >
+          <MaterialCommunityIcons name="chevron-right" size={26} color="#fff" />
+        </TouchableOpacity>
+      )}
+
+      {/* Dot indicators — tappable */}
       {items.length > 1 && (
         <View style={carouselStyles.dots}>
           {items.map((_, i) => (
-            <View
+            <TouchableOpacity
               key={i}
-              style={[
-                carouselStyles.dot,
-                i === page && carouselStyles.dotActive,
-              ]}
-            />
+              onPress={() => goToPage(i)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <View
+                style={[
+                  carouselStyles.dot,
+                  i === page && carouselStyles.dotActive,
+                ]}
+              />
+            </TouchableOpacity>
           ))}
         </View>
       )}
@@ -230,6 +263,24 @@ const carouselStyles = StyleSheet.create({
   dotActive: {
     backgroundColor: "#3d7a62",
     width: 16,
+  },
+  arrowBtn: {
+    position: "absolute",
+    top: "50%",
+    marginTop: -22,
+    backgroundColor: "rgba(0,0,0,0.40)",
+    borderRadius: 22,
+    width: 36,
+    height: 36,
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 10,
+  },
+  arrowLeft: {
+    left: 8,
+  },
+  arrowRight: {
+    right: 8,
   },
 });
 // ─────────────────────────────────────────────────────────────────────────────
@@ -549,24 +600,24 @@ export default function HomeScreen({ navigation }) {
     setDraftPhotos([]);
     setDraftVideos([]);
     setDraftAudios([]);
-    setModalBanner(null);
     setShowCreateModal(false);
   };
 
   const createMemorial = async () => {
     if (!title.trim() || !description.trim()) {
-      setModalBanner({ type: "error", text: "Please fill in the name and description." });
+      Alert.alert("Validation", "Please fill in name and description.");
       return;
     }
-    setModalBanner(null);
     setLoading(true);
     uploadInProgress.current = true;
 
     try {
+      // Capture drafts before any state changes
       const photosToUpload = [...draftPhotos];
       const videosToUpload = [...draftVideos];
       const audiosToUpload = [...draftAudios];
 
+      // Step 1 — create DB record first (empty media arrays; filled after upload)
       const createResult = await memorialService.createMemorial(userId, {
         title,
         description,
@@ -576,15 +627,20 @@ export default function HomeScreen({ navigation }) {
         audios: [],
       });
       if (!createResult.success) {
-        setModalBanner({ type: "error", text: createResult.error || "Could not create memory. Please check your connection." });
+        Alert.alert(
+          "Could not create memorial",
+          createResult.error || "Please check your connection and try again.",
+        );
         return;
       }
 
       const memorialId = createResult.id;
       const uploadErrors = [];
 
+      // Step 2 — upload files to Supabase Storage
       const uploadOne = async (uri, mediaKind) => {
         const rawExt = uri.split(".").pop().split("?")[0].toLowerCase();
+        // blob: and data: URIs have no real extension — use fallback
         const ext =
           (rawExt.length <= 5 ? rawExt : null) ||
           (mediaKind === "photos"
@@ -596,7 +652,10 @@ export default function HomeScreen({ navigation }) {
         const res = await storageService.uploadFile(uri, fileName, memorialId);
         if (!res.success) {
           uploadErrors.push(res.error || "Unknown upload error");
-          console.warn(`[createMemorial] ${mediaKind} upload failed:`, res.error);
+          console.warn(
+            `[createMemorial] ${mediaKind} upload failed:`,
+            res.error,
+          );
         }
         return res.success ? res.url : null;
       };
@@ -611,15 +670,18 @@ export default function HomeScreen({ navigation }) {
       const cleanVideos = videoUrls.filter(Boolean);
       const cleanAudios = audioUrls.filter(Boolean);
 
+      // Step 3 — persist cloud URLs back to DB
       if (cleanPhotos.length || cleanVideos.length || cleanAudios.length) {
         const upd = await memorialService.updateMemorial(memorialId, {
           photos: cleanPhotos,
           videos: cleanVideos,
           audios: cleanAudios,
         });
-        if (!upd.success) console.warn("[createMemorial] DB update failed:", upd.error);
+        if (!upd.success)
+          console.warn("[createMemorial] DB update failed:", upd.error);
       }
 
+      // Step 4 — add to local state so it appears immediately
       setMemorials((cur) => [
         {
           id: memorialId,
@@ -633,22 +695,21 @@ export default function HomeScreen({ navigation }) {
         },
         ...cur,
       ]);
+      resetModal();
 
-      const total = photosToUpload.length + videosToUpload.length + audiosToUpload.length;
-      const failed = total - (cleanPhotos.length + cleanVideos.length + cleanAudios.length);
-
+      const total =
+        photosToUpload.length + videosToUpload.length + audiosToUpload.length;
+      const failed =
+        total - (cleanPhotos.length + cleanVideos.length + cleanAudios.length);
       if (failed > 0) {
-        setModalBanner({
-          type: "error",
-          text: `Memory saved but ${failed} of ${total} file(s) could not be uploaded. Check your Supabase storage bucket settings.`,
-        });
-        // Don't close modal so user can see the error
-      } else {
-        setModalBanner({ type: "success", text: "Memory saved successfully!" });
-        setTimeout(() => resetModal(), 1200);
+        Alert.alert(
+          failed === total ? "Media Upload Failed" : "Partial Upload",
+          uploadErrors[0] ||
+            `${failed} of ${total} file(s) could not be uploaded.\n\nCheck that the Supabase "memorials" storage bucket exists and has upload policies enabled.`,
+        );
       }
     } catch (error) {
-      setModalBanner({ type: "error", text: error.message || "Could not save memory. Please try again." });
+      Alert.alert("Error", error.message || "Could not save memorial");
     } finally {
       uploadInProgress.current = false;
       setLoading(false);
@@ -1172,9 +1233,8 @@ export default function HomeScreen({ navigation }) {
                 </View>
               )}
 
-              <StatusBanner type={modalBanner?.type} message={modalBanner?.text} />
               <TouchableOpacity
-                style={[styles.button, loading && { opacity: 0.7 }]}
+                style={styles.button}
                 onPress={createMemorial}
                 disabled={loading}
               >
