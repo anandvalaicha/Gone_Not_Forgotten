@@ -33,20 +33,30 @@ let currentUser = null;
 // Write public profile fields to the `profiles` table so other users can read them
 const syncProfile = async (userId, meta) => {
   if (!isSupabaseConfigured || !userId) return;
-  await supabase.from('profiles').upsert(
-    {
-      id: userId,
-      display_name: meta.display_name || null,
-      first_name:   meta.first_name  || null,
-      last_name:    meta.last_name   || null,
-      bio:          meta.bio         || null,
-      photo_url:    meta.photo_url   || meta.avatar_url || null,
-      age:          meta.age         || null,
-      gender:       meta.gender      || null,
-      updated_at:   new Date().toISOString(),
-    },
+
+  // Base fields that always exist in the profiles table
+  const base = {
+    id:           userId,
+    display_name: meta.display_name || null,
+    first_name:   meta.first_name   || null,
+    last_name:    meta.last_name    || null,
+    bio:          meta.bio          || null,
+    photo_url:    meta.photo_url    || meta.avatar_url || null,
+    age:          meta.age          || null,
+    gender:       meta.gender       || null,
+    updated_at:   new Date().toISOString(),
+  };
+
+  // Try with birth/death year columns first
+  const { error } = await supabase.from('profiles').upsert(
+    { ...base, birth_year: meta.birth_year || null, death_year: meta.death_year || null },
     { onConflict: 'id' },
   );
+
+  // If those columns don't exist yet in the DB, fall back to base fields only
+  if (error) {
+    await supabase.from('profiles').upsert(base, { onConflict: 'id' });
+  }
 };
 
 export const authService = {

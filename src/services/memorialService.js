@@ -110,8 +110,13 @@ export const memorialService = {
         .from('memorials')
         .select('id, title, description, photos, videos, audios, created_at')
         .eq('user_id', userId)
+        .eq('visibility', 'public')
         .order('created_at', { ascending: false }),
     ]);
+
+    // Log errors to help diagnose DB/RLS issues
+    if (profileRes.error) console.warn('[getPublicProfile] profiles error:', profileRes.error.message);
+    if (memorialsRes.error) console.warn('[getPublicProfile] memorials error:', memorialsRes.error.message);
 
     // Profile row is optional — we can still show memorials without it
     const p = profileRes.data || {};
@@ -123,8 +128,10 @@ export const memorialService = {
           p.display_name ||
           [p.first_name, p.last_name].filter(Boolean).join(' ') ||
           'User',
-        bio:      p.bio       || '',
-        photoURL: p.photo_url || null,
+        bio:       p.bio        || '',
+        photoURL:  p.photo_url  || null,
+        birthYear: p.birth_year || '',
+        deathYear: p.death_year || '',
         memorials: (memorialsRes.data || []).map((m) => ({
           id:          m.id,
           title:       m.title,

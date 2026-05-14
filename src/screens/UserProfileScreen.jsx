@@ -179,10 +179,18 @@ export default function UserProfileScreen({ navigation, route }) {
       bio: "showBio",
       memories: "showMemories",
       gallery: "showGallery",
+      videos: "showMemories",
+      audio: "showMemories",
     }[section];
 
     if (!userProfile[publicKey]) return false;
     if (!access || access.length === 0) return true;
+    // "bio" is part of the profile card — allow it when "profile" OR "bio" is granted
+    if (section === "bio") return access.includes("bio") || access.includes("profile");
+    // videos live inside memories
+    if (section === "videos") return access.includes("memories");
+    // audio has its own toggle key
+    if (section === "audio") return access.includes("audio");
     return access.includes(section);
   };
 
@@ -222,8 +230,10 @@ export default function UserProfileScreen({ navigation, route }) {
       setUserProfile({
         userId: profile.userId,
         displayName: resolvedName,
-        bio: profile.bio,
+        bio: profile.bio || (isSelf ? currentUser?.bio : '') || '',
         avatar: resolvedAvatar,
+        birthYear: profile.birthYear || (isSelf ? currentUser?.birthYear : '') || '',
+        deathYear: profile.deathYear || (isSelf ? currentUser?.deathYear : '') || '',
         showBio: true,
         showMemories: true,
         showGallery: true,
@@ -314,6 +324,71 @@ export default function UserProfileScreen({ navigation, route }) {
         </View>
       );
     });
+  };
+
+  const renderVideos = () => {
+    if (!isSectionAllowed("videos")) {
+      return (
+        <View style={styles.emptyBox}>
+          <MaterialCommunityIcons name="video-off-outline" size={44} color={Colors.ink300} />
+          <Text style={styles.emptyTitle}>Videos not shared</Text>
+          <Text style={styles.emptyText}>This user hasn't made their videos public.</Text>
+        </View>
+      );
+    }
+    const allVideos = userProfile.memorials?.flatMap((m) => m.videos || []) || [];
+    if (allVideos.length === 0) {
+      return (
+        <View style={styles.emptyBox}>
+          <MaterialCommunityIcons name="video-off-outline" size={44} color={Colors.ink300} />
+          <Text style={styles.emptyTitle}>No videos</Text>
+        </View>
+      );
+    }
+    return (
+      <View style={styles.videoGrid}>
+        {allVideos.map((uri, i) => (
+          <TouchableOpacity
+            key={i}
+            style={styles.videoThumb}
+            onPress={() => setVideoUri(uri)}
+            activeOpacity={0.85}
+          >
+            <View style={styles.videoThumbInner}>
+              <MaterialCommunityIcons name="play-circle" size={48} color="rgba(255,255,255,0.92)" />
+            </View>
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
+  };
+
+  const renderAudio = () => {
+    if (!isSectionAllowed("audio")) {
+      return (
+        <View style={styles.emptyBox}>
+          <MaterialCommunityIcons name="music-off" size={44} color={Colors.ink300} />
+          <Text style={styles.emptyTitle}>Audio not shared</Text>
+          <Text style={styles.emptyText}>This user hasn't made their audio public.</Text>
+        </View>
+      );
+    }
+    const allAudios = userProfile.memorials?.flatMap((m) => m.audios || []) || [];
+    if (allAudios.length === 0) {
+      return (
+        <View style={styles.emptyBox}>
+          <MaterialCommunityIcons name="music-off" size={44} color={Colors.ink300} />
+          <Text style={styles.emptyTitle}>No audio</Text>
+        </View>
+      );
+    }
+    return (
+      <View style={styles.audioList}>
+        {allAudios.map((uri, i) => (
+          <PlukAudioItem key={i} uri={uri} index={i} />
+        ))}
+      </View>
+    );
   };
 
   const renderGallery = () => {
@@ -465,6 +540,15 @@ export default function UserProfileScreen({ navigation, route }) {
           {/* Name */}
           <Text style={styles.name}>{userProfile.displayName}</Text>
 
+          {/* Birth – Death years */}
+          {(userProfile.birthYear || userProfile.deathYear) && (
+            <Text style={styles.lifeYears}>
+              {userProfile.birthYear || "?"}
+              {" – "}
+              {userProfile.deathYear || "Present"}
+            </Text>
+          )}
+
           {/* Bio - only show if user allows */}
           {isSectionAllowed("bio") && userProfile.bio && (
             <Text style={styles.bio}>{userProfile.bio}</Text>
@@ -595,7 +679,7 @@ export default function UserProfileScreen({ navigation, route }) {
           <View style={styles.sheet}>
             {/* Tab bar */}
             <View style={styles.tabBar}>
-              {["Memories", "Gallery"].map((tab) => (
+              {["Memories", "Gallery", "Videos", "Audio"].map((tab) => (
                 <TouchableOpacity
                   key={tab}
                   style={[
@@ -629,6 +713,8 @@ export default function UserProfileScreen({ navigation, route }) {
             <View style={styles.tabContent}>
               {activeTab === "Memories" && renderMemories()}
               {activeTab === "Gallery" && renderGallery()}
+              {activeTab === "Videos" && renderVideos()}
+              {activeTab === "Audio" && renderAudio()}
             </View>
           </View>
         )}
@@ -757,6 +843,14 @@ const styles = StyleSheet.create({
     marginTop: 8,
     lineHeight: 22,
     paddingHorizontal: 32,
+  },
+  lifeYears: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: Colors.green700,
+    letterSpacing: 1,
+    marginTop: 6,
+    textAlign: "center",
   },
 
   // Pluk post banner
@@ -1000,6 +1094,31 @@ const styles = StyleSheet.create({
   masonryPhoto: {
     borderRadius: 12,
     backgroundColor: Colors.ink100,
+  },
+
+  // Video grid
+  videoGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    paddingBottom: 16,
+  },
+  videoThumb: {
+    width: "48%",
+    aspectRatio: 16 / 9,
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  videoThumbInner: {
+    flex: 1,
+    backgroundColor: "#1A1A2E",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  // Audio list
+  audioList: {
+    paddingBottom: 16,
   },
 
   // Empty states

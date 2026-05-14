@@ -15,8 +15,14 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   photo_url    TEXT,
   age          TEXT,
   gender       TEXT,
+  birth_year   TEXT,
+  death_year   TEXT,
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Migration: add birth_year / death_year if table already exists
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS birth_year TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS death_year TEXT;
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
@@ -55,11 +61,18 @@ CREATE INDEX IF NOT EXISTS memorials_user_id_idx ON public.memorials (user_id);
 ALTER TABLE public.memorials ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies before recreating (idempotent)
-DROP POLICY IF EXISTS "Users can read own memorials"   ON public.memorials;
-DROP POLICY IF EXISTS "Users can insert own memorials" ON public.memorials;
-DROP POLICY IF EXISTS "Users can update own memorials" ON public.memorials;
-DROP POLICY IF EXISTS "Users can delete own memorials" ON public.memorials;
+DROP POLICY IF EXISTS "Anyone can read public memorials" ON public.memorials;
+DROP POLICY IF EXISTS "Users can read own memorials"     ON public.memorials;
+DROP POLICY IF EXISTS "Users can insert own memorials"   ON public.memorials;
+DROP POLICY IF EXISTS "Users can update own memorials"   ON public.memorials;
+DROP POLICY IF EXISTS "Users can delete own memorials"   ON public.memorials;
 
+-- Public can read memorials marked visibility='public' (QR scan by other users)
+CREATE POLICY "Anyone can read public memorials"
+  ON public.memorials FOR SELECT
+  USING (visibility = 'public');
+
+-- Owner can always read their own memorials regardless of visibility
 CREATE POLICY "Users can read own memorials"
   ON public.memorials FOR SELECT
   USING (auth.uid() = user_id);
