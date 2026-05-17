@@ -265,6 +265,10 @@ export default function PlukQRScreen({ navigation }) {
                     backgroundColor="#FFFFFF"
                     getRef={(ref) => (qrRef.current = ref)}
                   />
+                  {/* Logo embedded in center */}
+                  <View style={styles.avatarOverlay}>
+                    <AppLogo size={28} />
+                  </View>
                 </View>
                 <View style={styles.urlRow}>
                   <MaterialCommunityIcons
@@ -826,6 +830,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     position: "relative",
+  },
+  avatarOverlay: {
+    position: "absolute",
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
   },
   urlRow: {
     flexDirection: "row",
