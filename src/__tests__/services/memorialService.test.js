@@ -217,14 +217,14 @@ describe('memorialService.deleteMemorial', () => {
   });
 });
 
-// ── savePlukPost ──────────────────────────────────────────────────────────────
-describe('memorialService.savePlukPost', () => {
-  it('upserts a pluk post and returns success', async () => {
+// ── savePlaquePost ──────────────────────────────────────────────────────────────
+describe('memorialService.savePlaquePost', () => {
+  it('upserts a plaque post and returns success', async () => {
     const chain = makeChain();
     chain.upsert.mockResolvedValue({ error: null });
     mockFrom.mockReturnValue(chain);
 
-    const result = await memorialService.savePlukPost('pluk-1', 'user-1', {
+    const result = await memorialService.savePlaquePost('plaque-1', 'user-1', {
       description: 'A memory',
       photos: ['photo1.jpg'],
       videos: [],
@@ -233,7 +233,7 @@ describe('memorialService.savePlukPost', () => {
 
     expect(result.success).toBe(true);
     expect(chain.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'pluk-1', user_id: 'user-1', description: 'A memory' }),
+      expect.objectContaining({ id: 'plaque-1', user_id: 'user-1', description: 'A memory' }),
       { onConflict: 'id' }
     );
   });
@@ -243,7 +243,7 @@ describe('memorialService.savePlukPost', () => {
     chain.upsert.mockResolvedValue({ error: null });
     mockFrom.mockReturnValue(chain);
 
-    await memorialService.savePlukPost('pluk-2', 'user-1', { photos: [], videos: [], audios: [] });
+    await memorialService.savePlaquePost('plaque-2', 'user-1', { photos: [], videos: [], audios: [] });
 
     const callArgs = chain.upsert.mock.calls[0][0];
     expect(callArgs.description).toBeNull();
@@ -254,27 +254,27 @@ describe('memorialService.savePlukPost', () => {
     chain.upsert.mockResolvedValue({ error: { message: 'Upsert error' } });
     mockFrom.mockReturnValue(chain);
 
-    const result = await memorialService.savePlukPost('pluk-1', 'user-1', {});
+    const result = await memorialService.savePlaquePost('plaque-1', 'user-1', {});
 
     expect(result.success).toBe(false);
     expect(result.error).toBe('Upsert error');
   });
 });
 
-// ── getPlukPost ───────────────────────────────────────────────────────────────
-describe('memorialService.getPlukPost', () => {
-  it('fetches a pluk post by id', async () => {
+// ── getPlaquePost ───────────────────────────────────────────────────────────────
+describe('memorialService.getPlaquePost', () => {
+  it('fetches a plaque post by id', async () => {
     const chain = makeChain();
     chain.single.mockResolvedValue({
-      data: { id: 'pluk-1', description: 'Hi', photos: [] },
+      data: { id: 'plaque-1', description: 'Hi', photos: [] },
       error: null,
     });
     mockFrom.mockReturnValue(chain);
 
-    const result = await memorialService.getPlukPost('pluk-1');
+    const result = await memorialService.getPlaquePost('plaque-1');
 
     expect(result.success).toBe(true);
-    expect(result.plukPost.id).toBe('pluk-1');
+    expect(result.plaquePost.id).toBe('plaque-1');
   });
 
   it('returns error when not found', async () => {
@@ -282,7 +282,7 @@ describe('memorialService.getPlukPost', () => {
     chain.single.mockResolvedValue({ data: null, error: { message: 'Not found' } });
     mockFrom.mockReturnValue(chain);
 
-    const result = await memorialService.getPlukPost('nonexistent');
+    const result = await memorialService.getPlaquePost('nonexistent');
 
     expect(result.success).toBe(false);
   });

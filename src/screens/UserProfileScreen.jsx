@@ -26,8 +26,8 @@ import VideoPlayerModal from "../components/VideoPlayerModal";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 
-// ── Inline audio player for pluk banner ──────────────────────────────────────
-function PlukAudioItem({ uri, index }) {
+// ── Inline audio player for plaque banner ──────────────────────────────────────
+function PlaqueAudioItem({ uri, index }) {
   useEffect(() => {
     setAudioModeAsync({ playsInSilentModeIOS: true }).catch(() => {});
   }, []);
@@ -52,23 +52,23 @@ function PlukAudioItem({ uri, index }) {
     <TouchableOpacity
       onPress={toggle}
       activeOpacity={0.8}
-      style={plukAudioStyles.row}
+      style={plaqueAudioStyles.row}
     >
-      <View style={plukAudioStyles.playBtn}>
+      <View style={plaqueAudioStyles.playBtn}>
         <MaterialCommunityIcons
           name={status.playing ? "pause" : "play"}
           size={18}
           color="#fff"
         />
       </View>
-      <Text style={plukAudioStyles.label} numberOfLines={1}>
+      <Text style={plaqueAudioStyles.label} numberOfLines={1}>
         Audio {index + 1}
       </Text>
-      <Text style={plukAudioStyles.time}>{fmt(status.currentTime)}</Text>
+      <Text style={plaqueAudioStyles.time}>{fmt(status.currentTime)}</Text>
     </TouchableOpacity>
   );
 }
-const plukAudioStyles = StyleSheet.create({
+const plaqueAudioStyles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
@@ -132,45 +132,45 @@ const DEMO_USER_PROFILE = {
 };
 
 export default function UserProfileScreen({ navigation, route }) {
-  const { userId, access, plukId } = route.params || {};
+  const { userId, access, plaqueId } = route.params || {};
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("Memories");
-  const [plukPost, setPlukPost] = useState(null);
-  const [plukLoading, setPlukLoading] = useState(!!plukId);
-  const [plukError, setPlukError] = useState(false);
+  const [plaquePost, setPlaquePost] = useState(null);
+  const [plaqueLoading, setPlaqueLoading] = useState(!!plaqueId);
+  const [plaqueError, setPlaqueError] = useState(false);
   const [videoUri, setVideoUri] = useState(null);
 
   useEffect(() => {
     loadUserProfile();
-    if (plukId) loadPlukPost();
+    if (plaqueId) loadPlaquePost();
   }, [userId]);
 
-  const loadPlukPost = async () => {
-    setPlukLoading(true);
-    setPlukError(false);
+  const loadPlaquePost = async () => {
+    setPlaqueLoading(true);
+    setPlaqueError(false);
 
     // 1. Try Supabase first (works cross-device)
-    const result = await memorialService.getPlukPost(plukId);
-    if (result.success && result.plukPost) {
-      setPlukPost(result.plukPost);
-      setPlukLoading(false);
+    const result = await memorialService.getPlaquePost(plaqueId);
+    if (result.success && result.plaquePost) {
+      setPlaquePost(result.plaquePost);
+      setPlaqueLoading(false);
       return;
     }
 
     // 2. Fall back to AsyncStorage (same-device scan)
     try {
-      const raw = await AsyncStorage.getItem(`pluk_${plukId}`);
+      const raw = await AsyncStorage.getItem(`plaque_${plaqueId}`);
       if (raw) {
-        setPlukPost(JSON.parse(raw));
-        setPlukLoading(false);
+        setPlaquePost(JSON.parse(raw));
+        setPlaqueLoading(false);
         return;
       }
     } catch (_) {}
 
     // Both failed — nothing to show
-    setPlukError(true);
-    setPlukLoading(false);
+    setPlaqueError(true);
+    setPlaqueLoading(false);
   };
 
   const isSectionAllowed = (section) => {
@@ -385,7 +385,7 @@ export default function UserProfileScreen({ navigation, route }) {
     return (
       <View style={styles.audioList}>
         {allAudios.map((uri, i) => (
-          <PlukAudioItem key={i} uri={uri} index={i} />
+          <PlaqueAudioItem key={i} uri={uri} index={i} />
         ))}
       </View>
     );
@@ -555,21 +555,21 @@ export default function UserProfileScreen({ navigation, route }) {
           )}
         </View>
 
-        {/* Pluk Post — shown when scanned from a Pluk QR */}
-        {plukId && (
-          <View style={styles.plukBanner}>
+        {/* Plaque Post — shown when scanned from a Plaque QR */}
+        {plaqueId && (
+          <View style={styles.plaqueBanner}>
             {/* Header */}
-            <View style={styles.plukBannerHeader}>
+            <View style={styles.plaqueBannerHeader}>
               <MaterialCommunityIcons
                 name="qrcode-scan"
                 size={18}
                 color="#3d7a62"
               />
-              <Text style={styles.plukBannerTitle}>Pluk Message</Text>
+              <Text style={styles.plaqueBannerTitle}>Plaque Message</Text>
             </View>
 
             {/* Loading state */}
-            {plukLoading && (
+            {plaqueLoading && (
               <ActivityIndicator
                 size="small"
                 color={Colors.green700}
@@ -578,14 +578,14 @@ export default function UserProfileScreen({ navigation, route }) {
             )}
 
             {/* Error state */}
-            {!plukLoading && plukError && (
-              <View style={styles.plukErrorBox}>
+            {!plaqueLoading && plaqueError && (
+              <View style={styles.plaqueErrorBox}>
                 <MaterialCommunityIcons
                   name="cloud-off-outline"
                   size={28}
                   color={Colors.ink300}
                 />
-                <Text style={styles.plukErrorText}>
+                <Text style={styles.plaqueErrorText}>
                   Could not load the shared content.{"\n"}This link may only
                   work on the original device.
                 </Text>
@@ -593,46 +593,46 @@ export default function UserProfileScreen({ navigation, route }) {
             )}
 
             {/* Loaded content */}
-            {!plukLoading && plukPost && (
+            {!plaqueLoading && plaquePost && (
               <>
-                {!!plukPost.description && (
-                  <Text style={styles.plukBannerDesc}>
-                    {plukPost.description}
+                {!!plaquePost.description && (
+                  <Text style={styles.plaqueBannerDesc}>
+                    {plaquePost.description}
                   </Text>
                 )}
 
-                {plukPost.photos?.length > 0 && (
+                {plaquePost.photos?.length > 0 && (
                   <>
-                    <Text style={styles.plukSectionLabel}>Photos</Text>
+                    <Text style={styles.plaqueSectionLabel}>Photos</Text>
                     <ScrollView
                       horizontal
                       showsHorizontalScrollIndicator={false}
                       style={{ marginTop: 6 }}
                     >
-                      {plukPost.photos.map((uri, i) => (
+                      {plaquePost.photos.map((uri, i) => (
                         <Image
                           key={i}
                           source={{ uri }}
-                          style={styles.plukThumb}
+                          style={styles.plaqueThumb}
                         />
                       ))}
                     </ScrollView>
                   </>
                 )}
 
-                {plukPost.videos?.length > 0 && (
+                {plaquePost.videos?.length > 0 && (
                   <>
-                    <Text style={styles.plukSectionLabel}>Videos</Text>
+                    <Text style={styles.plaqueSectionLabel}>Videos</Text>
                     <ScrollView
                       horizontal
                       showsHorizontalScrollIndicator={false}
                       style={{ marginTop: 6 }}
                     >
-                      {plukPost.videos.map((uri, i) => (
+                      {plaquePost.videos.map((uri, i) => (
                         <TouchableOpacity
                           key={i}
                           onPress={() => setVideoUri(uri)}
-                          style={styles.plukVideoThumb}
+                          style={styles.plaqueVideoThumb}
                         >
                           <MaterialCommunityIcons
                             name="play-circle"
@@ -645,11 +645,11 @@ export default function UserProfileScreen({ navigation, route }) {
                   </>
                 )}
 
-                {plukPost.audios?.length > 0 && (
+                {plaquePost.audios?.length > 0 && (
                   <>
-                    <Text style={styles.plukSectionLabel}>Audio</Text>
-                    {plukPost.audios.map((uri, i) => (
-                      <PlukAudioItem key={i} uri={uri} index={i} />
+                    <Text style={styles.plaqueSectionLabel}>Audio</Text>
+                    {plaquePost.audios.map((uri, i) => (
+                      <PlaqueAudioItem key={i} uri={uri} index={i} />
                     ))}
                   </>
                 )}
@@ -663,15 +663,15 @@ export default function UserProfileScreen({ navigation, route }) {
           <VideoPlayerModal uri={videoUri} onClose={() => setVideoUri(null)} />
         )}
 
-        {/* When viewing via Pluk QR — show only curated content, not the full profile */}
-        {plukId ? (
-          <View style={styles.plukFooter}>
+        {/* When viewing via Plaque QR — show only curated content, not the full profile */}
+        {plaqueId ? (
+          <View style={styles.plaqueFooter}>
             <MaterialCommunityIcons
               name="shield-check-outline"
               size={16}
               color={Colors.green700}
             />
-            <Text style={styles.plukFooterText}>
+            <Text style={styles.plaqueFooterText}>
               This is a curated share — only selected content is shown
             </Text>
           </View>
@@ -853,8 +853,8 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
-  // Pluk post banner
-  plukBanner: {
+  // Plaque post banner
+  plaqueBanner: {
     marginHorizontal: 16,
     marginTop: 12,
     backgroundColor: "#f0f7f4",
@@ -863,37 +863,37 @@ const styles = StyleSheet.create({
     borderColor: "#c8e6d8",
     padding: 16,
   },
-  plukBannerHeader: {
+  plaqueBannerHeader: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     marginBottom: 6,
   },
-  plukBannerTitle: {
+  plaqueBannerTitle: {
     fontSize: 13,
     fontWeight: "700",
     color: "#3d7a62",
     textTransform: "uppercase",
     letterSpacing: 0.6,
   },
-  plukBannerDesc: {
+  plaqueBannerDesc: {
     fontSize: 15,
     color: Colors.ink700,
     lineHeight: 22,
     marginTop: 4,
   },
-  plukErrorBox: {
+  plaqueErrorBox: {
     alignItems: "center",
     paddingVertical: 16,
     gap: 10,
   },
-  plukErrorText: {
+  plaqueErrorText: {
     fontSize: 13,
     color: Colors.ink400,
     textAlign: "center",
     lineHeight: 19,
   },
-  plukSectionLabel: {
+  plaqueSectionLabel: {
     fontSize: 11,
     fontWeight: "700",
     color: "#3d7a62",
@@ -901,13 +901,13 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginTop: 12,
   },
-  plukThumb: {
+  plaqueThumb: {
     width: 90,
     height: 90,
     borderRadius: 10,
     marginRight: 8,
   },
-  plukVideoThumb: {
+  plaqueVideoThumb: {
     width: 90,
     height: 90,
     borderRadius: 10,
@@ -917,8 +917,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  // Pluk-only footer note
-  plukFooter: {
+  // Plaque-only footer note
+  plaqueFooter: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -933,7 +933,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#c8e6d8",
   },
-  plukFooterText: {
+  plaqueFooterText: {
     fontSize: 13,
     color: Colors.green700,
     fontWeight: "500",

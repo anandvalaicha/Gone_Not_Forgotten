@@ -27,7 +27,7 @@ import { memorialService, authService } from "../services";
 import { Colors } from "../theme/colors";
 import AppLogo from "../components/AppLogo";
 
-export default function PlukQRScreen({ navigation }) {
+export default function PlaqueQRScreen({ navigation }) {
   const qrRef = useRef(null);
 
   // selected media
@@ -44,20 +44,20 @@ export default function PlukQRScreen({ navigation }) {
 
   // QR generated state
   const [qrGenerated, setQrGenerated] = useState(false);
-  const [plukId] = useState(() => `pluk-${Date.now()}`);
+  const [plaqueId] = useState(() => `plaque-${Date.now()}`);
 
   const user = authService.getCurrentUser();
   const userId = user?.uid;
   const displayName =
     user?.displayName ||
     user?.email?.split("@")[0]?.replace(/[._]/g, " ") ||
-    "Pluk Memorial";
+    "Plaque Memorial";
 
   // Embed userId so the scanner can load the right person's profile.
-  // Falls back to a pluk-only URL if the user somehow isn't loaded yet.
+  // Falls back to a plaque-only URL if the user somehow isn't loaded yet.
   const qrValue = userId
-    ? `https://gonenotforgotten.app/profile/${userId}?pluk=${plukId}`
-    : `https://gonenotforgotten.app/pluk/${plukId}`;
+    ? `https://gonenotforgotten.app/profile/${userId}?plaque=${plaqueId}`
+    : `https://gonenotforgotten.app/plaque/${plaqueId}`;
 
   // Load user memorials for the picker
   const loadMemorials = async () => {
@@ -149,8 +149,8 @@ export default function PlukQRScreen({ navigation }) {
       return;
     }
 
-    const plukData = {
-      id: plukId,
+    const plaqueData = {
+      id: plaqueId,
       description: description.trim(),
       photos,
       videos,
@@ -159,12 +159,12 @@ export default function PlukQRScreen({ navigation }) {
 
     // Save to AsyncStorage first — always works on same device
     try {
-      await AsyncStorage.setItem(`pluk_${plukId}`, JSON.stringify(plukData));
+      await AsyncStorage.setItem(`plaque_${plaqueId}`, JSON.stringify(plaqueData));
     } catch (_) {}
 
     // Save to Supabase so other devices can scan and see the content
     if (isSupabaseConfigured && userId) {
-      const result = await memorialService.savePlukPost(plukId, userId, plukData);
+      const result = await memorialService.savePlaquePost(plaqueId, userId, plaqueData);
       if (!result.success) {
         Alert.alert(
           "Heads up",
@@ -191,7 +191,7 @@ export default function PlukQRScreen({ navigation }) {
       qrRef.current.toDataURL(async (dataURL) => {
         try {
           const fileUri =
-            FileSystem.cacheDirectory + `pluk-qr-${Date.now()}.png`;
+            FileSystem.cacheDirectory + `plaque-qr-${Date.now()}.png`;
           await FileSystem.writeAsStringAsync(fileUri, dataURL, {
             encoding: FileSystem.EncodingType.Base64,
           });
@@ -247,7 +247,7 @@ export default function PlukQRScreen({ navigation }) {
           {/* Title */}
           <View style={styles.titleArea}>
             <AppLogo size={36} tintColor="#fff" />
-            <Text style={styles.title}>Pluk QR Code</Text>
+            <Text style={styles.title}>Plaque QR Code</Text>
             <Text style={styles.subtitle}>Share your curated memorial</Text>
           </View>
 
@@ -384,7 +384,7 @@ export default function PlukQRScreen({ navigation }) {
               style={styles.manageBtn}
               onPress={() =>
                 Share.share({
-                  message: `View this Pluk memorial: ${qrValue}`,
+                  message: `View this Plaque memorial: ${qrValue}`,
                   url: qrValue,
                 }).catch(() => {})
               }
@@ -422,7 +422,7 @@ export default function PlukQRScreen({ navigation }) {
       {/* Title */}
       <View style={styles.titleArea}>
         <AppLogo size={36} tintColor="#fff" />
-        <Text style={styles.title}>Pluk QR Code</Text>
+        <Text style={styles.title}>Plaque QR Code</Text>
         <Text style={styles.subtitle}>
           Select media & write, then generate a QR
         </Text>

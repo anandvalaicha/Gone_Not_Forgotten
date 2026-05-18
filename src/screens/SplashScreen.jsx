@@ -6,15 +6,15 @@ import AppLogo from "../components/AppLogo";
 
 const { height } = Dimensions.get("window");
 
-// ─── TIMING (total ≈ 6.9 s) ──────────────────────────────────────────────────
+// ─── TIMING (total ≈ 8.7 s) ──────────────────────────────────────────────────
 // 0.0 – 1.5 s  background fades in
-// 0.0 – 7.0 s  background slowly zooms in (Ken Burns)
-// 1.5 – 2.3 s  golden glow overlay fades in
-// 2.3 – 3.0 s  logo + teal halo appear
-// 3.0 – 3.6 s  title slides up
-// 3.6 – 4.4 s  divider + tagline appear
-// 4.4 – 6.1 s  hold (glow continues pulsing)
-// 6.1 – 6.9 s  screen fades to black → onFinish
+// 0.0 – 9.0 s  background slowly zooms in (Ken Burns)
+// 1.5 – 4.0 s  background holds alone (2.5 s pause)
+// 4.0 – 4.8 s  golden glow overlay + logo appear
+// 4.8 – 5.4 s  title slides up
+// 5.4 – 6.2 s  divider + tagline appear
+// 6.2 – 7.9 s  hold (glow continues pulsing)
+// 7.9 – 8.7 s  screen fades to black → onFinish
 
 export default function SplashScreen({ onFinish }) {
   const bgOpacity = useRef(new Animated.Value(0)).current;
@@ -33,7 +33,7 @@ export default function SplashScreen({ onFinish }) {
     // Ken Burns zoom – runs in parallel with the whole sequence
     Animated.timing(bgScale, {
       toValue: 1.08,
-      duration: 7000,
+      duration: 9000,
       useNativeDriver: true,
     }).start();
 
@@ -45,17 +45,18 @@ export default function SplashScreen({ onFinish }) {
         duration: 1500,
         useNativeDriver: true,
       }),
-      // Phase 2 – warm glow overlay appears [1.5 → 2.3 s]
-      Animated.timing(glowOpacity, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      // Phase 3 – logo rises [2.3 → 3.0 s]
+      // Hold – background alone [1.5 → 4.0 s]
+      Animated.delay(2500),
+      // Phase 2 – warm glow + logo appear together [4.0 → 4.8 s]
       Animated.parallel([
+        Animated.timing(glowOpacity, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
         Animated.timing(logoOpacity, {
           toValue: 1,
-          duration: 700,
+          duration: 800,
           useNativeDriver: true,
         }),
         Animated.spring(logoScale, {
@@ -65,7 +66,7 @@ export default function SplashScreen({ onFinish }) {
           useNativeDriver: true,
         }),
       ]),
-      // Phase 4 – title slides up [3.0 → 3.6 s]
+      // Phase 3 – title slides up [4.8 → 5.4 s]
       Animated.parallel([
         Animated.timing(titleOpacity, {
           toValue: 1,
@@ -78,7 +79,7 @@ export default function SplashScreen({ onFinish }) {
           useNativeDriver: true,
         }),
       ]),
-      // Phase 5 – divider + tagline [3.6 → 4.4 s]
+      // Phase 4 – divider + tagline [5.4 → 6.2 s]
       Animated.parallel([
         Animated.timing(dividerOpacity, {
           toValue: 1,
@@ -94,9 +95,9 @@ export default function SplashScreen({ onFinish }) {
           }),
         ]),
       ]),
-      // Hold [4.4 → 6.1 s]
+      // Hold [6.2 → 7.9 s]
       Animated.delay(1700),
-      // Phase 6 – fade to black [6.1 → 6.9 s]
+      // Phase 5 – fade to black [7.9 → 8.7 s]
       Animated.timing(screenOpacity, {
         toValue: 0,
         duration: 800,
@@ -104,7 +105,7 @@ export default function SplashScreen({ onFinish }) {
       }),
     ]).start(() => onFinish());
 
-    // Soft glow pulse loop – begins once the overlay is visible (~2.3 s)
+    // Soft glow pulse loop – begins once the overlay is visible (~4.0 s)
     const pulseTimer = setTimeout(() => {
       Animated.loop(
         Animated.sequence([
@@ -120,7 +121,7 @@ export default function SplashScreen({ onFinish }) {
           }),
         ]),
       ).start();
-    }, 2300);
+    }, 4000);
 
     return () => clearTimeout(pulseTimer);
   }, []);
@@ -141,6 +142,7 @@ export default function SplashScreen({ onFinish }) {
             { opacity: bgOpacity },
           ]}
           resizeMode="cover"
+          blurRadius={2}
         />
       </Animated.View>
 

@@ -18,7 +18,7 @@ import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
 import ResetPasswordScreen from './src/screens/ResetPasswordScreen';
 import SplashScreen from './src/screens/SplashScreen';
 import StoryScreen from './src/screens/StoryScreen';
-import PlukQRScreen from './src/screens/PlukQRScreen';
+import PlaqueQRScreen from './src/screens/PlaqueQRScreen';
 import { authService } from './src/services';
 import { supabase } from './src/config/supabase';
 import { AuthContext } from './src/context/AuthContext';
@@ -144,7 +144,7 @@ export default function App() {
               <Stack.Screen name="UserProfile" component={UserProfileScreen} />
               <Stack.Screen name="Detail" component={MemorialDetailScreen} />
               <Stack.Screen name="Story" component={StoryScreen} />
-              <Stack.Screen name="PlukQR" component={PlukQRScreen} />
+              <Stack.Screen name="PlaqueQR" component={PlaqueQRScreen} />
             </>
           ) : (
             <>

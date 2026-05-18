@@ -68,12 +68,12 @@ export const memorialService = {
     return { success: true };
   },
 
-  // Save a Pluk QR post (description + media references) keyed by plukId.
-  savePlukPost: async (plukId, userId, { description, photos, videos, audios }) => {
+  // Save a Plaque QR post (description + media references) keyed by plaqueId.
+  savePlaquePost: async (plaqueId, userId, { description, photos, videos, audios }) => {
     if (!isSupabaseConfigured) return { success: false, error: 'Supabase is not configured.' };
-    const { error } = await supabase.from('pluk_posts').upsert(
+    const { error } = await supabase.from('plaque_posts').upsert(
       {
-        id: plukId,
+        id: plaqueId,
         user_id: userId,
         description: description || null,
         photos: photos || [],
@@ -86,16 +86,16 @@ export const memorialService = {
     return { success: true };
   },
 
-  // Fetch a Pluk QR post by its plukId (public read).
-  getPlukPost: async (plukId) => {
+  // Fetch a Plaque QR post by its plaqueId (public read).
+  getPlaquePost: async (plaqueId) => {
     if (!isSupabaseConfigured) return { success: false, error: 'Supabase is not configured.' };
     const { data, error } = await supabase
-      .from('pluk_posts')
+      .from('plaque_posts')
       .select('*')
-      .eq('id', plukId)
+      .eq('id', plaqueId)
       .single();
     if (error) return { success: false, error: error.message };
-    return { success: true, plukPost: data };
+    return { success: true, plaquePost: data };
   },
 
   // Fetch another user's public profile + their memorials for the QR scan view.

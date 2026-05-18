@@ -1026,14 +1026,14 @@ export default function HomeScreen({ navigation }) {
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.actionBtn, styles.actionBtnSecondary]}
-                  onPress={() => navigation.navigate("PlukQR")}
+                  onPress={() => navigation.navigate("PlaqueQR")}
                 >
                   <MaterialCommunityIcons
                     name="star-four-points-outline"
                     size={20}
                     color={Colors.ink700}
                   />
-                  <Text style={styles.actionLabel}>Pluk QR Code</Text>
+                  <Text style={styles.actionLabel}>Plaque QR Code</Text>
                 </TouchableOpacity>
               </View>
 

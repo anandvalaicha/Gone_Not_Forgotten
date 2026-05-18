@@ -26,9 +26,9 @@ export default function QRScannerScreen({ navigation }) {
     });
   }, []);
 
-  // ── Parse a raw QR value or manually pasted URL into { userId, access, plukId } ──
+  // ── Parse a raw QR value or manually pasted URL into { userId, access, plaqueId } ──
   const parseProfileLink = (raw) => {
-    const result = { userId: null, access: null, plukId: null };
+    const result = { userId: null, access: null, plaqueId: null };
     if (!raw) return result;
     try {
       const trimmed = raw.trim();
@@ -42,13 +42,13 @@ export default function QRScannerScreen({ navigation }) {
           const accessParam = params.get("access");
           if (accessParam)
             result.access = accessParam.split(",").filter(Boolean);
-          const plukParam = params.get("pluk");
-          if (plukParam) result.plukId = plukParam;
+          const plaqueParam = params.get("plaque");
+          if (plaqueParam) result.plaqueId = plaqueParam;
         }
       } else if (trimmed.includes("/memorial/")) {
         result.userId = trimmed.split("/memorial/").pop() || null;
-      } else if (trimmed.includes("/pluk/")) {
-        // Legacy pluk URL — no userId embedded, nothing we can show
+      } else if (trimmed.includes("/plaque/")) {
+        // Legacy plaque URL — no userId embedded, nothing we can show
         result.userId = null;
       } else {
         // Treat the raw value as a userId directly
@@ -58,7 +58,7 @@ export default function QRScannerScreen({ navigation }) {
     return result;
   };
 
-  const navigateToProfile = (userId, access, plukId) => {
+  const navigateToProfile = (userId, access, plaqueId) => {
     if (!userId) {
       Alert.alert(
         "Invalid link",
@@ -66,12 +66,12 @@ export default function QRScannerScreen({ navigation }) {
       );
       return;
     }
-    navigation.navigate("UserProfile", { userId, access, plukId });
+    navigation.navigate("UserProfile", { userId, access, plaqueId });
   };
 
   const handleBarCodeScanned = ({ data }) => {
     setScanned(true);
-    const { userId, access, plukId } = parseProfileLink(data);
+    const { userId, access, plaqueId } = parseProfileLink(data);
     if (!userId) {
       Alert.alert(
         "Unrecognised QR",
@@ -80,12 +80,12 @@ export default function QRScannerScreen({ navigation }) {
       );
       return;
     }
-    navigation.navigate("UserProfile", { userId, access, plukId });
+    navigation.navigate("UserProfile", { userId, access, plaqueId });
   };
 
   const openManualProfile = () => {
-    const { userId, access, plukId } = parseProfileLink(manualValue);
-    navigateToProfile(userId, access, plukId);
+    const { userId, access, plaqueId } = parseProfileLink(manualValue);
+    navigateToProfile(userId, access, plaqueId);
   };
 
   // ── Shared manual-entry section ───────────────────────────────────────────
