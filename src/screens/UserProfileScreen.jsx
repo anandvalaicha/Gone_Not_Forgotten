@@ -565,7 +565,7 @@ export default function UserProfileScreen({ navigation, route }) {
                 size={18}
                 color="#3d7a62"
               />
-              <Text style={styles.plaqueBannerTitle}>Plaque Message</Text>
+              <Text style={styles.plaqueBannerTitle}>Memorial Note</Text>
             </View>
 
             {/* Loading state */}
