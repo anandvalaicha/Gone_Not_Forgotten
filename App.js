@@ -18,7 +18,22 @@ import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
 import ResetPasswordScreen from './src/screens/ResetPasswordScreen';
 import SplashScreen from './src/screens/SplashScreen';
 import StoryScreen from './src/screens/StoryScreen';
+import StoryViewerScreen from './src/screens/StoryViewerScreen';
 import PlaqueQRScreen from './src/screens/PlaqueQRScreen';
+
+const linking = {
+  prefixes: ['gonnotforgotten://'],
+  config: {
+    screens: {
+      StoryViewer: {
+        path: 'view-story',
+      },
+      UserProfile: {
+        path: 'profile/:userId',
+      },
+    },
+  },
+};
 import { authService } from './src/services';
 import { supabase } from './src/config/supabase';
 import { AuthContext } from './src/context/AuthContext';
@@ -128,7 +143,7 @@ export default function App() {
 
   return (
     <AuthContext.Provider value={authCtx}>
-      <NavigationContainer>
+      <NavigationContainer linking={linking}>
         <Stack.Navigator key={recoveryMode ? 'recovery' : user ? 'app' : 'auth'} screenOptions={{ headerShown: false }}>
           {recoveryMode ? (
             <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
@@ -144,6 +159,7 @@ export default function App() {
               <Stack.Screen name="UserProfile" component={UserProfileScreen} />
               <Stack.Screen name="Detail" component={MemorialDetailScreen} />
               <Stack.Screen name="Story" component={StoryScreen} />
+              <Stack.Screen name="StoryViewer" component={StoryViewerScreen} />
               <Stack.Screen name="PlaqueQR" component={PlaqueQRScreen} />
             </>
           ) : (

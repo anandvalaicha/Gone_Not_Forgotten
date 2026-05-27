@@ -86,6 +86,35 @@ export const memorialService = {
     return { success: true };
   },
 
+  // Save a shared story so any device can open the deep link.
+  saveSharedStory: async (storyId, userId, storyData) => {
+    if (!isSupabaseConfigured) return { success: false, error: 'Supabase is not configured.' };
+    const { error } = await supabase.from('shared_stories').upsert(
+      {
+        id: storyId,
+        user_id: userId,
+        title: storyData.title || 'Untitled Story',
+        story_type: storyData.storyType || 'status',
+        data: storyData,
+      },
+      { onConflict: 'id' },
+    );
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  },
+
+  // Fetch a shared story by its id (public read).
+  getSharedStory: async (storyId) => {
+    if (!isSupabaseConfigured) return { success: false, error: 'Supabase is not configured.' };
+    const { data, error } = await supabase
+      .from('shared_stories')
+      .select('*')
+      .eq('id', storyId)
+      .single();
+    if (error) return { success: false, error: error.message };
+    return { success: true, story: data };
+  },
+
   // Fetch a Plaque QR post by its plaqueId (public read).
   getPlaquePost: async (plaqueId) => {
     if (!isSupabaseConfigured) return { success: false, error: 'Supabase is not configured.' };

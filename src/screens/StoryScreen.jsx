@@ -472,20 +472,49 @@ export default function StoryScreen({ navigation }) {
 
   // ── Share story ──
   const handleShare = async () => {
-    const count =
-      storyType === "status"
-        ? slides.length
-        : storyType === "slideshow"
-          ? slideshowItems.length
-          : tributePhotos.length;
-    if (count === 0 && !tributeText.trim() && !storyTitle.trim()) {
+    const ps = getPreviewSlides();
+    if (ps.length === 0 && !tributeText.trim() && !storyTitle.trim()) {
       Alert.alert("Empty", "Create your story first before sharing.");
       return;
     }
+
+    const title = storyTitle || "My Memorial Story";
+    const storyId = `story-${Date.now()}`;
+
+    const storyData = {
+      title,
+      storyType,
+      slides: storyType === "status" ? slides : [],
+      statusVideos: storyType === "status" ? statusVideos : [],
+      statusAudios: storyType === "status" ? statusAudios : [],
+      tributeText: storyType === "written" ? tributeText : "",
+      tributePhotos: storyType === "written" ? tributePhotos : [],
+      tributeVideos: storyType === "written" ? tributeVideos : [],
+      tributeAudios: storyType === "written" ? tributeAudios : [],
+      slideshowItems: storyType === "slideshow" ? slideshowItems : [],
+      slideshowVideos: storyType === "slideshow" ? slideshowVideos : [],
+      slideshowAudios: storyType === "slideshow" ? slideshowAudios : [],
+    };
+
+    // Save to Supabase so any device can open the link
+    if (isSupabaseConfigured && userId !== "demo-user-001") {
+      const result = await memorialService.saveSharedStory(storyId, userId, storyData);
+      if (!result.success) {
+        Alert.alert(
+          "Could not save story",
+          "The story couldn't be saved to the cloud. The link may not work on other devices.",
+          [{ text: "Share anyway" }, { text: "Cancel", style: "cancel", onPress: () => {} }],
+        );
+      }
+    }
+
+    const deepLink = `gonnotforgotten://view-story?id=${storyId}`;
+
     try {
       await Share.share({
-        title: storyTitle || "My Memorial Story",
-        message: `${storyTitle || "My Memorial Story"}\n\n${tributeText || `A memorial story with ${count} slide${count !== 1 ? "s" : ""}.`}`,
+        title,
+        message: `${title}\n\nView this memorial story on Gone Not Forgotten:\n${deepLink}`,
+        url: deepLink,
       });
     } catch {}
   };

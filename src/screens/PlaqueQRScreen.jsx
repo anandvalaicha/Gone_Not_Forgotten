@@ -382,12 +382,16 @@ export default function PlaqueQRScreen({ navigation }) {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.manageBtn}
-              onPress={() =>
+              onPress={() => {
+                const deepLink = userId
+                  ? `gonnotforgotten://profile/${userId}?plaque=${plaqueId}`
+                  : `gonnotforgotten://plaque/${plaqueId}`;
                 Share.share({
-                  message: `View this Plaque memorial: ${qrValue}`,
-                  url: qrValue,
-                }).catch(() => {})
-              }
+                  title: `${displayName}'s Memorial Plaque`,
+                  message: `View ${displayName}'s memorial plaque on Gone Not Forgotten:\n${deepLink}`,
+                  url: deepLink,
+                }).catch(() => {});
+              }}
             >
               <MaterialCommunityIcons
                 name="share-variant"
