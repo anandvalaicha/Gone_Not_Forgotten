@@ -1,7 +1,9 @@
 import { createContext, useContext } from 'react';
 
-// Provides a direct signOut callback from App.js so any screen can sign out
-// without relying on the module-level listener Set in authService.
-export const AuthContext = createContext(() => {});
+const defaultCtx = { signOut: () => {}, onPasswordReset: () => {} };
 
-export const useSignOut = () => useContext(AuthContext);
+export const AuthContext = createContext(defaultCtx);
+
+export const useSignOut = () => useContext(AuthContext).signOut;
+export const useOnPasswordReset = () => useContext(AuthContext).onPasswordReset;
+

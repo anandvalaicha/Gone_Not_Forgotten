@@ -16,6 +16,8 @@ import {
   ActivityIndicator,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
+import * as DocumentPicker from "expo-document-picker";
+import { Video, Audio } from "expo-av";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { isSupabaseConfigured } from "../config/supabase";
 import { memorialService, authService } from "../services";
@@ -23,6 +25,31 @@ import { Colors } from "../theme/colors";
 import AppLogo from "../components/AppLogo";
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
+
+function PreviewAudioSlide({ uri, onEnd }) {
+  useEffect(() => {
+    let sound = null;
+    (async () => {
+      try {
+        await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
+        const { sound: s } = await Audio.Sound.createAsync(
+          { uri },
+          { shouldPlay: true },
+          (status) => {
+            if (status.didJustFinish) onEnd();
+          },
+        );
+        sound = s;
+      } catch {
+        onEnd();
+      }
+    })();
+    return () => {
+      sound?.unloadAsync().catch(() => {});
+    };
+  }, [uri]);
+  return null;
+}
 
 // ── Story Type Tabs ──
 const STORY_TYPES = [
@@ -44,6 +71,14 @@ export default function StoryScreen({ navigation }) {
 
   // Slideshow
   const [slideshowItems, setSlideshowItems] = useState([]);
+
+  // Videos & audios per section
+  const [statusVideos, setStatusVideos] = useState([]);
+  const [statusAudios, setStatusAudios] = useState([]);
+  const [tributeVideos, setTributeVideos] = useState([]);
+  const [tributeAudios, setTributeAudios] = useState([]);
+  const [slideshowVideos, setSlideshowVideos] = useState([]);
+  const [slideshowAudios, setSlideshowAudios] = useState([]);
 
   // Preview
   const [previewVisible, setPreviewVisible] = useState(false);
@@ -88,7 +123,7 @@ export default function StoryScreen({ navigation }) {
   const pickPhoto = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: "images",
         allowsEditing: false,
         quality: 0.8,
         allowsMultipleSelection: true,
@@ -97,6 +132,43 @@ export default function StoryScreen({ navigation }) {
       return result.assets.map((a) => a.uri);
     } catch (e) {
       Alert.alert("Error", e.message || "Could not pick photo");
+      return null;
+    }
+  };
+
+  // ── Pick video from device ──
+  const pickVideo = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: "videos",
+        allowsEditing: false,
+        quality: 0.8,
+      });
+      if (result.canceled || !result.assets?.length) return null;
+      return result.assets.map((a) => a.uri);
+    } catch (e) {
+      Alert.alert("Error", e.message || "Could not pick video");
+      return null;
+    }
+  };
+
+  // ── Pick audio from device ──
+  const pickAudio = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: "audio/*",
+        copyToCacheDirectory: true,
+        multiple: true,
+      });
+      if (result.canceled) return null;
+      const assets = result.assets || (result.uri ? [result] : []);
+      if (!assets.length) return null;
+      return assets.map((a) => ({
+        uri: a.uri,
+        name: a.name || a.uri.split("/").pop() || "audio",
+      }));
+    } catch (e) {
+      Alert.alert("Error", e.message || "Could not pick audio");
       return null;
     }
   };
@@ -127,6 +199,31 @@ export default function StoryScreen({ navigation }) {
       prev.map((s, i) => (i === idx ? { ...s, caption } : s)),
     );
 
+  // Status Story: video & audio
+  const addStatusVideoFromDevice = async () => {
+    const uris = await pickVideo();
+    if (!uris) return;
+    setStatusVideos((prev) => [...prev, ...uris]);
+  };
+  const addStatusVideoFromMemory = () => {
+    setMemoryPickTarget("status-video");
+    setMemoryModalVisible(true);
+  };
+  const removeStatusVideo = (idx) =>
+    setStatusVideos((prev) => prev.filter((_, i) => i !== idx));
+
+  const addStatusAudioFromDevice = async () => {
+    const items = await pickAudio();
+    if (!items) return;
+    setStatusAudios((prev) => [...prev, ...items]);
+  };
+  const addStatusAudioFromMemory = () => {
+    setMemoryPickTarget("status-audio");
+    setMemoryModalVisible(true);
+  };
+  const removeStatusAudio = (idx) =>
+    setStatusAudios((prev) => prev.filter((_, i) => i !== idx));
+
   // ── Written Tribute: add photos ──
   const addTributePhotoFromDevice = async () => {
     const uris = await pickPhoto();
@@ -141,6 +238,31 @@ export default function StoryScreen({ navigation }) {
 
   const removeTributePhoto = (idx) =>
     setTributePhotos((prev) => prev.filter((_, i) => i !== idx));
+
+  // Written Tribute: video & audio
+  const addTributeVideoFromDevice = async () => {
+    const uris = await pickVideo();
+    if (!uris) return;
+    setTributeVideos((prev) => [...prev, ...uris]);
+  };
+  const addTributeVideoFromMemory = () => {
+    setMemoryPickTarget("tribute-video");
+    setMemoryModalVisible(true);
+  };
+  const removeTributeVideo = (idx) =>
+    setTributeVideos((prev) => prev.filter((_, i) => i !== idx));
+
+  const addTributeAudioFromDevice = async () => {
+    const items = await pickAudio();
+    if (!items) return;
+    setTributeAudios((prev) => [...prev, ...items]);
+  };
+  const addTributeAudioFromMemory = () => {
+    setMemoryPickTarget("tribute-audio");
+    setMemoryModalVisible(true);
+  };
+  const removeTributeAudio = (idx) =>
+    setTributeAudios((prev) => prev.filter((_, i) => i !== idx));
 
   // ── Slideshow: add items ──
   const addSlideshowFromDevice = async () => {
@@ -165,20 +287,64 @@ export default function StoryScreen({ navigation }) {
       prev.map((s, i) => (i === idx ? { ...s, caption } : s)),
     );
 
+  // Slideshow: video & audio
+  const addSlideshowVideoFromDevice = async () => {
+    const uris = await pickVideo();
+    if (!uris) return;
+    setSlideshowVideos((prev) => [...prev, ...uris]);
+  };
+  const addSlideshowVideoFromMemory = () => {
+    setMemoryPickTarget("slideshow-video");
+    setMemoryModalVisible(true);
+  };
+  const removeSlideshowVideo = (idx) =>
+    setSlideshowVideos((prev) => prev.filter((_, i) => i !== idx));
+
+  const addSlideshowAudioFromDevice = async () => {
+    const items = await pickAudio();
+    if (!items) return;
+    setSlideshowAudios((prev) => [...prev, ...items]);
+  };
+  const addSlideshowAudioFromMemory = () => {
+    setMemoryPickTarget("slideshow-audio");
+    setMemoryModalVisible(true);
+  };
+  const removeSlideshowAudio = (idx) =>
+    setSlideshowAudios((prev) => prev.filter((_, i) => i !== idx));
+
   // ── Memory picker select ──
-  const selectFromMemory = (uri) => {
+  const selectFromMemory = (item) => {
+    const uri = typeof item === "string" ? item : item.uri;
+    const name =
+      typeof item === "string" ? uri.split("/").pop() || "audio" : item.name;
+
     if (memoryPickTarget === "status") {
-      if (!slides.find((s) => s.uri === uri)) {
+      if (!slides.find((s) => s.uri === uri))
         setSlides((prev) => [...prev, { uri, text: "", caption: "" }]);
-      }
     } else if (memoryPickTarget === "tribute") {
-      if (!tributePhotos.includes(uri)) {
+      if (!tributePhotos.includes(uri))
         setTributePhotos((prev) => [...prev, uri]);
-      }
     } else if (memoryPickTarget === "slideshow") {
-      if (!slideshowItems.find((s) => s.uri === uri)) {
+      if (!slideshowItems.find((s) => s.uri === uri))
         setSlideshowItems((prev) => [...prev, { uri, caption: "" }]);
-      }
+    } else if (memoryPickTarget === "status-video") {
+      if (!statusVideos.includes(uri))
+        setStatusVideos((prev) => [...prev, uri]);
+    } else if (memoryPickTarget === "tribute-video") {
+      if (!tributeVideos.includes(uri))
+        setTributeVideos((prev) => [...prev, uri]);
+    } else if (memoryPickTarget === "slideshow-video") {
+      if (!slideshowVideos.includes(uri))
+        setSlideshowVideos((prev) => [...prev, uri]);
+    } else if (memoryPickTarget === "status-audio") {
+      if (!statusAudios.find((a) => a.uri === uri))
+        setStatusAudios((prev) => [...prev, { uri, name }]);
+    } else if (memoryPickTarget === "tribute-audio") {
+      if (!tributeAudios.find((a) => a.uri === uri))
+        setTributeAudios((prev) => [...prev, { uri, name }]);
+    } else if (memoryPickTarget === "slideshow-audio") {
+      if (!slideshowAudios.find((a) => a.uri === uri))
+        setSlideshowAudios((prev) => [...prev, { uri, name }]);
     }
   };
 
@@ -192,44 +358,87 @@ export default function StoryScreen({ navigation }) {
     return items;
   };
 
+  const getMemoryVideos = () => {
+    const items = [];
+    memorials.forEach((m) => {
+      (m.videos || []).forEach((uri) =>
+        items.push({ uri, name: uri.split("/").pop() || "video", memorialTitle: m.title }),
+      );
+    });
+    return items;
+  };
+
+  const getMemoryAudios = () => {
+    const items = [];
+    memorials.forEach((m) => {
+      (m.audios || []).forEach((uri) =>
+        items.push({ uri, name: uri.split("/").pop() || "audio", memorialTitle: m.title }),
+      );
+    });
+    return items;
+  };
+
   // ── Preview logic ──
   const getPreviewSlides = useCallback(() => {
-    if (storyType === "status") return slides;
-    if (storyType === "slideshow")
-      return slideshowItems.map((s) => ({
-        uri: s.uri,
-        text: "",
-        caption: s.caption,
-      }));
-    return tributePhotos.map((uri, i) => ({
-      uri,
-      text: i === 0 ? storyTitle : "",
-      caption: i === tributePhotos.length - 1 ? tributeText.slice(0, 120) : "",
-    }));
+    const result = [];
+    if (storyType === "status") {
+      slides.forEach((s) =>
+        result.push({ type: "photo", uri: s.uri, text: s.text, caption: s.caption }),
+      );
+      statusVideos.forEach((uri) => result.push({ type: "video", uri }));
+      statusAudios.forEach((item) =>
+        result.push({ type: "audio", uri: item.uri, name: item.name }),
+      );
+    } else if (storyType === "slideshow") {
+      slideshowItems.forEach((s) =>
+        result.push({ type: "photo", uri: s.uri, text: "", caption: s.caption }),
+      );
+      slideshowVideos.forEach((uri) => result.push({ type: "video", uri }));
+      slideshowAudios.forEach((item) =>
+        result.push({ type: "audio", uri: item.uri, name: item.name }),
+      );
+    } else {
+      tributePhotos.forEach((uri, i) =>
+        result.push({
+          type: "photo",
+          uri,
+          text: i === 0 ? storyTitle : "",
+          caption:
+            i === tributePhotos.length - 1 ? tributeText.slice(0, 120) : "",
+        }),
+      );
+      tributeVideos.forEach((uri) => result.push({ type: "video", uri }));
+      tributeAudios.forEach((item) =>
+        result.push({ type: "audio", uri: item.uri, name: item.name }),
+      );
+    }
+    return result;
   }, [
     storyType,
-    slides,
-    slideshowItems,
-    tributePhotos,
-    tributeText,
-    storyTitle,
+    slides, statusVideos, statusAudios,
+    slideshowItems, slideshowVideos, slideshowAudios,
+    tributePhotos, tributeVideos, tributeAudios,
+    tributeText, storyTitle,
   ]);
 
   const openPreview = () => {
     const ps = getPreviewSlides();
     if (ps.length === 0) {
-      Alert.alert("Nothing to preview", "Add some photos or slides first.");
+      Alert.alert("Nothing to preview", "Add some media or write something first.");
       return;
     }
     setPreviewIndex(0);
     setPreviewVisible(true);
   };
 
-  // Auto-advance preview
+  // Auto-advance preview — photos use a 5s timer; video/audio advance via media end callbacks
   useEffect(() => {
     if (!previewVisible) return;
     const ps = getPreviewSlides();
+    const current = ps[previewIndex];
     progressAnim.setValue(0);
+
+    if (!current || current.type !== "photo") return;
 
     const anim = Animated.timing(progressAnim, {
       toValue: 1,
@@ -263,127 +472,202 @@ export default function StoryScreen({ navigation }) {
 
   // ── Share story ──
   const handleShare = async () => {
-    const count =
-      storyType === "status"
-        ? slides.length
-        : storyType === "slideshow"
-          ? slideshowItems.length
-          : tributePhotos.length;
-    if (count === 0 && !tributeText.trim() && !storyTitle.trim()) {
+    const ps = getPreviewSlides();
+    if (ps.length === 0 && !tributeText.trim() && !storyTitle.trim()) {
       Alert.alert("Empty", "Create your story first before sharing.");
       return;
     }
+
+    const title = storyTitle || "My Memorial Story";
+    const storyId = `story-${Date.now()}`;
+
+    const storyData = {
+      title,
+      storyType,
+      slides: storyType === "status" ? slides : [],
+      statusVideos: storyType === "status" ? statusVideos : [],
+      statusAudios: storyType === "status" ? statusAudios : [],
+      tributeText: storyType === "written" ? tributeText : "",
+      tributePhotos: storyType === "written" ? tributePhotos : [],
+      tributeVideos: storyType === "written" ? tributeVideos : [],
+      tributeAudios: storyType === "written" ? tributeAudios : [],
+      slideshowItems: storyType === "slideshow" ? slideshowItems : [],
+      slideshowVideos: storyType === "slideshow" ? slideshowVideos : [],
+      slideshowAudios: storyType === "slideshow" ? slideshowAudios : [],
+    };
+
+    // Save to Supabase so any device can open the link
+    if (isSupabaseConfigured && userId !== "demo-user-001") {
+      const result = await memorialService.saveSharedStory(storyId, userId, storyData);
+      if (!result.success) {
+        Alert.alert(
+          "Could not save story",
+          "The story couldn't be saved to the cloud. The link may not work on other devices.",
+          [{ text: "Share anyway" }, { text: "Cancel", style: "cancel", onPress: () => {} }],
+        );
+      }
+    }
+
+    const deepLink = `gonnotforgotten://view-story?id=${storyId}`;
+
     try {
       await Share.share({
-        title: storyTitle || "My Memorial Story",
-        message: `${storyTitle || "My Memorial Story"}\n\n${tributeText || `A memorial story with ${count} slide${count !== 1 ? "s" : ""}.`}`,
+        title,
+        message: `${title}\n\nView this memorial story on Gone Not Forgotten:\n${deepLink}`,
+        url: deepLink,
       });
     } catch {}
   };
 
   const canPreview =
     storyType === "status"
-      ? slides.length > 0
+      ? slides.length > 0 || statusVideos.length > 0 || statusAudios.length > 0
       : storyType === "slideshow"
-        ? slideshowItems.length > 0
-        : tributePhotos.length > 0 || tributeText.trim().length > 0;
+        ? slideshowItems.length > 0 || slideshowVideos.length > 0 || slideshowAudios.length > 0
+        : tributePhotos.length > 0 || tributeVideos.length > 0 || tributeAudios.length > 0 || tributeText.trim().length > 0;
 
   const previewSlides = getPreviewSlides();
 
   // ─────────── Preview Modal ───────────
-  const renderPreview = () => (
-    <Modal
-      visible={previewVisible}
-      animationType="fade"
-      onRequestClose={() => setPreviewVisible(false)}
-    >
-      <View style={styles.previewContainer}>
-        {previewSlides[previewIndex]?.uri ? (
-          <Image
-            source={{ uri: previewSlides[previewIndex].uri }}
-            style={styles.previewImage}
-            resizeMode="cover"
-          />
-        ) : (
-          <View style={[styles.previewImage, { backgroundColor: "#2A2A2A" }]} />
-        )}
-
-        {/* Dark overlay */}
-        <View style={styles.previewOverlay} />
-
-        {/* Progress bars */}
-        <View style={styles.progressBarRow}>
-          {previewSlides.map((_, idx) => (
-            <View key={idx} style={styles.progressBarBg}>
-              <Animated.View
-                style={[
-                  styles.progressBarFill,
-                  {
-                    width:
-                      idx < previewIndex
-                        ? "100%"
-                        : idx === previewIndex
-                          ? progressAnim.interpolate({
-                              inputRange: [0, 1],
-                              outputRange: ["0%", "100%"],
-                            })
-                          : "0%",
-                  },
-                ]}
+  const renderPreview = () => {
+    const current = previewSlides[previewIndex];
+    return (
+      <Modal
+        visible={previewVisible}
+        animationType="fade"
+        onRequestClose={() => setPreviewVisible(false)}
+      >
+        <View style={styles.previewContainer}>
+          {/* ── Background / media ── */}
+          {current?.type === "video" ? (
+            <Video
+              key={previewIndex}
+              source={{ uri: current.uri }}
+              style={styles.previewImage}
+              shouldPlay
+              isLooping={false}
+              resizeMode="cover"
+              onPlaybackStatusUpdate={(status) => {
+                if (status.didJustFinish) goNextPreview();
+              }}
+            />
+          ) : current?.type === "audio" ? (
+            <>
+              <View style={[styles.previewImage, styles.previewAudioBg]}>
+                <MaterialCommunityIcons
+                  name="music-circle"
+                  size={110}
+                  color="rgba(255,255,255,0.2)"
+                />
+                <Text style={styles.previewAudioLabel} numberOfLines={2}>
+                  {current.name}
+                </Text>
+              </View>
+              <PreviewAudioSlide
+                key={previewIndex}
+                uri={current.uri}
+                onEnd={goNextPreview}
               />
+            </>
+          ) : current?.uri ? (
+            <Image
+              source={{ uri: current.uri }}
+              style={styles.previewImage}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={[styles.previewImage, { backgroundColor: "#2A2A2A" }]} />
+          )}
+
+          {/* Dark overlay */}
+          <View style={styles.previewOverlay} />
+
+          {/* Progress bars */}
+          <View style={styles.progressBarRow}>
+            {previewSlides.map((slide, idx) => (
+              <View key={idx} style={styles.progressBarBg}>
+                <Animated.View
+                  style={[
+                    styles.progressBarFill,
+                    {
+                      width:
+                        idx < previewIndex
+                          ? "100%"
+                          : idx === previewIndex && slide.type === "photo"
+                            ? progressAnim.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: ["0%", "100%"],
+                              })
+                            : idx === previewIndex
+                              ? "100%"
+                              : "0%",
+                    },
+                  ]}
+                />
+              </View>
+            ))}
+          </View>
+
+          {/* Close button */}
+          <TouchableOpacity
+            style={styles.previewCloseBtn}
+            onPress={() => setPreviewVisible(false)}
+          >
+            <MaterialCommunityIcons name="close" size={24} color="#fff" />
+          </TouchableOpacity>
+
+          {/* Type badge for video/audio */}
+          {current?.type === "video" && (
+            <View style={styles.previewTypeBadge}>
+              <MaterialCommunityIcons name="play-circle" size={16} color="#fff" />
+              <Text style={styles.previewTypeBadgeText}>Video</Text>
             </View>
-          ))}
-        </View>
+          )}
+          {current?.type === "audio" && (
+            <View style={styles.previewTypeBadge}>
+              <MaterialCommunityIcons name="music-note" size={16} color="#fff" />
+              <Text style={styles.previewTypeBadgeText}>Audio</Text>
+            </View>
+          )}
 
-        {/* Close button */}
-        <TouchableOpacity
-          style={styles.previewCloseBtn}
-          onPress={() => setPreviewVisible(false)}
-        >
-          <MaterialCommunityIcons name="close" size={24} color="#fff" />
-        </TouchableOpacity>
+          {/* Text overlay */}
+          {current?.text ? (
+            <View style={styles.previewTextOverlay}>
+              <Text style={styles.previewText}>{current.text}</Text>
+            </View>
+          ) : null}
 
-        {/* Text overlay */}
-        {previewSlides[previewIndex]?.text ? (
-          <View style={styles.previewTextOverlay}>
-            <Text style={styles.previewText}>
-              {previewSlides[previewIndex].text}
+          {/* Caption */}
+          {current?.caption ? (
+            <View style={styles.previewCaptionArea}>
+              <Text style={styles.previewCaption}>{current.caption}</Text>
+            </View>
+          ) : null}
+
+          {/* Slide counter */}
+          <View style={styles.previewCounter}>
+            <Text style={styles.previewCounterText}>
+              {previewIndex + 1} / {previewSlides.length}
             </Text>
           </View>
-        ) : null}
 
-        {/* Caption */}
-        {previewSlides[previewIndex]?.caption ? (
-          <View style={styles.previewCaptionArea}>
-            <Text style={styles.previewCaption}>
-              {previewSlides[previewIndex].caption}
-            </Text>
+          {/* Tap zones for nav */}
+          <View style={styles.previewTapZones}>
+            <TouchableOpacity
+              style={styles.tapLeft}
+              onPress={goPrevPreview}
+              activeOpacity={1}
+            />
+            <TouchableOpacity
+              style={styles.tapRight}
+              onPress={goNextPreview}
+              activeOpacity={1}
+            />
           </View>
-        ) : null}
-
-        {/* Slide counter */}
-        <View style={styles.previewCounter}>
-          <Text style={styles.previewCounterText}>
-            {previewIndex + 1} / {previewSlides.length}
-          </Text>
         </View>
-
-        {/* Tap zones for nav */}
-        <View style={styles.previewTapZones}>
-          <TouchableOpacity
-            style={styles.tapLeft}
-            onPress={goPrevPreview}
-            activeOpacity={1}
-          />
-          <TouchableOpacity
-            style={styles.tapRight}
-            onPress={goNextPreview}
-            activeOpacity={1}
-          />
-        </View>
-      </View>
-    </Modal>
-  );
+      </Modal>
+    );
+  };
 
   // ─────────── Builder View ───────────
   return (
@@ -462,6 +746,7 @@ export default function StoryScreen({ navigation }) {
               Add photos and write text overlays for each slide.
             </Text>
 
+            <Text style={styles.mediaCategoryLabel}>Photos</Text>
             <View style={styles.mediaBtnRow}>
               <TouchableOpacity
                 style={styles.sourceBtn}
@@ -486,6 +771,106 @@ export default function StoryScreen({ navigation }) {
                 <Text style={styles.sourceBtnText}>Upload Photo</Text>
               </TouchableOpacity>
             </View>
+
+            <Text style={styles.mediaCategoryLabel}>Videos</Text>
+            <View style={styles.mediaBtnRow}>
+              <TouchableOpacity
+                style={styles.sourceBtn}
+                onPress={addStatusVideoFromMemory}
+              >
+                <MaterialCommunityIcons
+                  name="video-box"
+                  size={18}
+                  color={Colors.green700}
+                />
+                <Text style={styles.sourceBtnText}>From Memory</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.sourceBtn}
+                onPress={addStatusVideoFromDevice}
+              >
+                <MaterialCommunityIcons
+                  name="video-plus"
+                  size={18}
+                  color={Colors.green700}
+                />
+                <Text style={styles.sourceBtnText}>Upload Video</Text>
+              </TouchableOpacity>
+            </View>
+            {statusVideos.length > 0 && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.mediaRow}
+              >
+                {statusVideos.map((uri, idx) => (
+                  <View key={idx} style={styles.thumbWrap}>
+                    <View style={styles.videoThumb}>
+                      <MaterialCommunityIcons
+                        name="play-circle"
+                        size={32}
+                        color="#fff"
+                      />
+                    </View>
+                    <TouchableOpacity
+                      style={styles.removeBtn}
+                      onPress={() => removeStatusVideo(idx)}
+                    >
+                      <MaterialCommunityIcons
+                        name="close-circle"
+                        size={20}
+                        color={Colors.error}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+
+            <Text style={styles.mediaCategoryLabel}>Audio</Text>
+            <View style={styles.mediaBtnRow}>
+              <TouchableOpacity
+                style={styles.sourceBtn}
+                onPress={addStatusAudioFromMemory}
+              >
+                <MaterialCommunityIcons
+                  name="music-box"
+                  size={18}
+                  color={Colors.green700}
+                />
+                <Text style={styles.sourceBtnText}>From Memory</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.sourceBtn}
+                onPress={addStatusAudioFromDevice}
+              >
+                <MaterialCommunityIcons
+                  name="music-note-plus"
+                  size={18}
+                  color={Colors.green700}
+                />
+                <Text style={styles.sourceBtnText}>Upload Audio</Text>
+              </TouchableOpacity>
+            </View>
+            {statusAudios.map((item, idx) => (
+              <View key={idx} style={styles.audioRow}>
+                <MaterialCommunityIcons
+                  name="music-note"
+                  size={20}
+                  color={Colors.green700}
+                />
+                <Text style={styles.audioName} numberOfLines={1}>
+                  {item.name}
+                </Text>
+                <TouchableOpacity onPress={() => removeStatusAudio(idx)}>
+                  <MaterialCommunityIcons
+                    name="close-circle"
+                    size={20}
+                    color={Colors.error}
+                  />
+                </TouchableOpacity>
+              </View>
+            ))}
 
             {slides.length > 0 ? (
               slides.map((slide, idx) => (
@@ -561,9 +946,9 @@ export default function StoryScreen({ navigation }) {
             </View>
 
             <View style={styles.builderSection}>
-              <Text style={styles.builderSectionTitle}>
-                Photos ({tributePhotos.length})
-              </Text>
+              <Text style={styles.builderSectionTitle}>Media</Text>
+
+              <Text style={styles.mediaCategoryLabel}>Photos</Text>
               <View style={styles.mediaBtnRow}>
                 <TouchableOpacity
                   style={styles.sourceBtn}
@@ -588,7 +973,7 @@ export default function StoryScreen({ navigation }) {
                   <Text style={styles.sourceBtnText}>Upload Photo</Text>
                 </TouchableOpacity>
               </View>
-              {tributePhotos.length > 0 ? (
+              {tributePhotos.length > 0 && (
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
@@ -610,9 +995,107 @@ export default function StoryScreen({ navigation }) {
                     </View>
                   ))}
                 </ScrollView>
-              ) : (
-                <Text style={styles.emptyHint}>No photos added yet</Text>
               )}
+
+              <Text style={styles.mediaCategoryLabel}>Videos</Text>
+              <View style={styles.mediaBtnRow}>
+                <TouchableOpacity
+                  style={styles.sourceBtn}
+                  onPress={addTributeVideoFromMemory}
+                >
+                  <MaterialCommunityIcons
+                    name="video-box"
+                    size={18}
+                    color={Colors.green700}
+                  />
+                  <Text style={styles.sourceBtnText}>From Memory</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.sourceBtn}
+                  onPress={addTributeVideoFromDevice}
+                >
+                  <MaterialCommunityIcons
+                    name="video-plus"
+                    size={18}
+                    color={Colors.green700}
+                  />
+                  <Text style={styles.sourceBtnText}>Upload Video</Text>
+                </TouchableOpacity>
+              </View>
+              {tributeVideos.length > 0 && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.mediaRow}
+                >
+                  {tributeVideos.map((uri, idx) => (
+                    <View key={idx} style={styles.thumbWrap}>
+                      <View style={styles.videoThumb}>
+                        <MaterialCommunityIcons
+                          name="play-circle"
+                          size={32}
+                          color="#fff"
+                        />
+                      </View>
+                      <TouchableOpacity
+                        style={styles.removeBtn}
+                        onPress={() => removeTributeVideo(idx)}
+                      >
+                        <MaterialCommunityIcons
+                          name="close-circle"
+                          size={20}
+                          color={Colors.error}
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </ScrollView>
+              )}
+
+              <Text style={styles.mediaCategoryLabel}>Audio</Text>
+              <View style={styles.mediaBtnRow}>
+                <TouchableOpacity
+                  style={styles.sourceBtn}
+                  onPress={addTributeAudioFromMemory}
+                >
+                  <MaterialCommunityIcons
+                    name="music-box"
+                    size={18}
+                    color={Colors.green700}
+                  />
+                  <Text style={styles.sourceBtnText}>From Memory</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.sourceBtn}
+                  onPress={addTributeAudioFromDevice}
+                >
+                  <MaterialCommunityIcons
+                    name="music-note-plus"
+                    size={18}
+                    color={Colors.green700}
+                  />
+                  <Text style={styles.sourceBtnText}>Upload Audio</Text>
+                </TouchableOpacity>
+              </View>
+              {tributeAudios.map((item, idx) => (
+                <View key={idx} style={styles.audioRow}>
+                  <MaterialCommunityIcons
+                    name="music-note"
+                    size={20}
+                    color={Colors.green700}
+                  />
+                  <Text style={styles.audioName} numberOfLines={1}>
+                    {item.name}
+                  </Text>
+                  <TouchableOpacity onPress={() => removeTributeAudio(idx)}>
+                    <MaterialCommunityIcons
+                      name="close-circle"
+                      size={20}
+                      color={Colors.error}
+                    />
+                  </TouchableOpacity>
+                </View>
+              ))}
             </View>
           </>
         )}
@@ -627,6 +1110,7 @@ export default function StoryScreen({ navigation }) {
               Add photos and captions — they'll play as a slideshow.
             </Text>
 
+            <Text style={styles.mediaCategoryLabel}>Photos</Text>
             <View style={styles.mediaBtnRow}>
               <TouchableOpacity
                 style={styles.sourceBtn}
@@ -651,6 +1135,106 @@ export default function StoryScreen({ navigation }) {
                 <Text style={styles.sourceBtnText}>Upload Photo</Text>
               </TouchableOpacity>
             </View>
+
+            <Text style={styles.mediaCategoryLabel}>Videos</Text>
+            <View style={styles.mediaBtnRow}>
+              <TouchableOpacity
+                style={styles.sourceBtn}
+                onPress={addSlideshowVideoFromMemory}
+              >
+                <MaterialCommunityIcons
+                  name="video-box"
+                  size={18}
+                  color={Colors.green700}
+                />
+                <Text style={styles.sourceBtnText}>From Memory</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.sourceBtn}
+                onPress={addSlideshowVideoFromDevice}
+              >
+                <MaterialCommunityIcons
+                  name="video-plus"
+                  size={18}
+                  color={Colors.green700}
+                />
+                <Text style={styles.sourceBtnText}>Upload Video</Text>
+              </TouchableOpacity>
+            </View>
+            {slideshowVideos.length > 0 && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.mediaRow}
+              >
+                {slideshowVideos.map((uri, idx) => (
+                  <View key={idx} style={styles.thumbWrap}>
+                    <View style={styles.videoThumb}>
+                      <MaterialCommunityIcons
+                        name="play-circle"
+                        size={32}
+                        color="#fff"
+                      />
+                    </View>
+                    <TouchableOpacity
+                      style={styles.removeBtn}
+                      onPress={() => removeSlideshowVideo(idx)}
+                    >
+                      <MaterialCommunityIcons
+                        name="close-circle"
+                        size={20}
+                        color={Colors.error}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+
+            <Text style={styles.mediaCategoryLabel}>Audio</Text>
+            <View style={styles.mediaBtnRow}>
+              <TouchableOpacity
+                style={styles.sourceBtn}
+                onPress={addSlideshowAudioFromMemory}
+              >
+                <MaterialCommunityIcons
+                  name="music-box"
+                  size={18}
+                  color={Colors.green700}
+                />
+                <Text style={styles.sourceBtnText}>From Memory</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.sourceBtn}
+                onPress={addSlideshowAudioFromDevice}
+              >
+                <MaterialCommunityIcons
+                  name="music-note-plus"
+                  size={18}
+                  color={Colors.green700}
+                />
+                <Text style={styles.sourceBtnText}>Upload Audio</Text>
+              </TouchableOpacity>
+            </View>
+            {slideshowAudios.map((item, idx) => (
+              <View key={idx} style={styles.audioRow}>
+                <MaterialCommunityIcons
+                  name="music-note"
+                  size={20}
+                  color={Colors.green700}
+                />
+                <Text style={styles.audioName} numberOfLines={1}>
+                  {item.name}
+                </Text>
+                <TouchableOpacity onPress={() => removeSlideshowAudio(idx)}>
+                  <MaterialCommunityIcons
+                    name="close-circle"
+                    size={20}
+                    color={Colors.error}
+                  />
+                </TouchableOpacity>
+              </View>
+            ))}
 
             {slideshowItems.length > 0 ? (
               slideshowItems.map((item, idx) => (
@@ -721,7 +1305,11 @@ export default function StoryScreen({ navigation }) {
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Select from Memory</Text>
             <Text style={styles.modalHint}>
-              Tap photos to add them to your story.
+              {memoryPickTarget?.endsWith("-audio")
+                ? "Tap audio files to add them to your story."
+                : memoryPickTarget?.endsWith("-video")
+                  ? "Tap videos to add them to your story."
+                  : "Tap photos to add them to your story."}
             </Text>
 
             {loadingMemorials ? (
@@ -730,7 +1318,100 @@ export default function StoryScreen({ navigation }) {
                 color={Colors.green700}
                 style={{ marginTop: 20 }}
               />
+            ) : memoryPickTarget?.endsWith("-audio") ? (
+              // ── Audio list ──
+              <FlatList
+                data={getMemoryAudios()}
+                keyExtractor={(item, idx) => `${item.uri}-${idx}`}
+                ListEmptyComponent={
+                  <Text style={styles.emptyModalText}>
+                    No audio found in your memories.
+                  </Text>
+                }
+                renderItem={({ item }) => {
+                  const isSelected =
+                    memoryPickTarget === "status-audio"
+                      ? statusAudios.some((a) => a.uri === item.uri)
+                      : memoryPickTarget === "tribute-audio"
+                        ? tributeAudios.some((a) => a.uri === item.uri)
+                        : slideshowAudios.some((a) => a.uri === item.uri);
+                  return (
+                    <TouchableOpacity
+                      style={[
+                        styles.memoryAudioItem,
+                        isSelected && styles.memoryAudioItemSelected,
+                      ]}
+                      onPress={() => selectFromMemory(item)}
+                      activeOpacity={0.7}
+                    >
+                      <MaterialCommunityIcons
+                        name="music-note"
+                        size={22}
+                        color={isSelected ? Colors.green700 : Colors.ink500}
+                      />
+                      <Text style={styles.memoryAudioName} numberOfLines={1}>
+                        {item.name}
+                      </Text>
+                      {isSelected && (
+                        <MaterialCommunityIcons
+                          name="check-circle"
+                          size={20}
+                          color={Colors.green700}
+                        />
+                      )}
+                    </TouchableOpacity>
+                  );
+                }}
+                contentContainerStyle={{ paddingBottom: 20 }}
+              />
+            ) : memoryPickTarget?.endsWith("-video") ? (
+              // ── Video list ──
+              <FlatList
+                data={getMemoryVideos()}
+                keyExtractor={(item, idx) => `${item.uri}-${idx}`}
+                ListEmptyComponent={
+                  <Text style={styles.emptyModalText}>
+                    No videos found in your memories.
+                  </Text>
+                }
+                renderItem={({ item }) => {
+                  const isSelected =
+                    memoryPickTarget === "status-video"
+                      ? statusVideos.includes(item.uri)
+                      : memoryPickTarget === "tribute-video"
+                        ? tributeVideos.includes(item.uri)
+                        : slideshowVideos.includes(item.uri);
+                  return (
+                    <TouchableOpacity
+                      style={[
+                        styles.memoryAudioItem,
+                        isSelected && styles.memoryAudioItemSelected,
+                      ]}
+                      onPress={() => selectFromMemory(item)}
+                      activeOpacity={0.7}
+                    >
+                      <MaterialCommunityIcons
+                        name="video"
+                        size={22}
+                        color={isSelected ? Colors.green700 : Colors.ink500}
+                      />
+                      <Text style={styles.memoryAudioName} numberOfLines={1}>
+                        {item.name}
+                      </Text>
+                      {isSelected && (
+                        <MaterialCommunityIcons
+                          name="check-circle"
+                          size={20}
+                          color={Colors.green700}
+                        />
+                      )}
+                    </TouchableOpacity>
+                  );
+                }}
+                contentContainerStyle={{ paddingBottom: 20 }}
+              />
             ) : (
+              // ── Photo grid ──
               <FlatList
                 data={getMemoryPhotos()}
                 keyExtractor={(item, idx) => `${item.uri}-${idx}`}
@@ -1061,6 +1742,64 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
 
+  // ── Media category label ──
+  mediaCategoryLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: Colors.ink500,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    marginBottom: 6,
+    marginTop: 4,
+  },
+
+  // ── Video thumbnail ──
+  videoThumb: {
+    width: 80,
+    height: 80,
+    borderRadius: 12,
+    backgroundColor: "#2A2A2A",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  // ── Audio row ──
+  audioRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: Colors.cream,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
+  },
+  audioName: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.ink700,
+  },
+
+  // ── Memory audio/video list items ──
+  memoryAudioItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.ink100,
+  },
+  memoryAudioItemSelected: {
+    backgroundColor: Colors.green100 + "33",
+    borderRadius: 8,
+  },
+  memoryAudioName: {
+    flex: 1,
+    fontSize: 14,
+    color: Colors.ink700,
+  },
+
   // ── Empty hint ──
   emptyHint: {
     fontSize: 13,
@@ -1135,6 +1874,37 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderRadius: 2,
   },
+  previewAudioBg: {
+    backgroundColor: "#0d1b2a",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 16,
+  },
+  previewAudioLabel: {
+    color: "rgba(255,255,255,0.8)",
+    fontSize: 16,
+    fontWeight: "600",
+    textAlign: "center",
+    paddingHorizontal: 32,
+  },
+  previewTypeBadge: {
+    position: "absolute",
+    top: 110,
+    left: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  previewTypeBadgeText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+
   previewCloseBtn: {
     position: "absolute",
     top: 66,

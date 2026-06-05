@@ -16,9 +16,6 @@ import { authService, settingsService } from "../services";
 import { Colors } from "../theme/colors";
 import AppLogo from "../components/AppLogo";
 
-const DEMO_AVATAR =
-  "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=400&q=80";
-
 export default function QRCodeScreen({ navigation }) {
   const user = authService.getCurrentUser();
   const userId = user?.uid || "demo-user-001";
@@ -143,12 +140,9 @@ export default function QRCodeScreen({ navigation }) {
                 color="#1A1A1A"
                 backgroundColor="#FFFFFF"
               />
-              {/* Avatar center */}
+              {/* Logo center overlay */}
               <View style={styles.avatarOverlay}>
-                <Image
-                  source={{ uri: DEMO_AVATAR }}
-                  style={styles.avatarImage}
-                />
+                <AppLogo size={28} />
               </View>
             </View>
 
@@ -356,24 +350,15 @@ const styles = StyleSheet.create({
     position: "relative",
   },
 
-  // Avatar in center of QR
+  // Logo embedded in center of QR — no border, blends with QR white background
   avatarOverlay: {
     position: "absolute",
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    borderWidth: 3,
-    borderColor: "#FFFFFF",
-    overflow: "hidden",
-    backgroundColor: "#fff",
-    shadowColor: "#000",
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  avatarImage: {
-    width: "100%",
-    height: "100%",
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   // URL row

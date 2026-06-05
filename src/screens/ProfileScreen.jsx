@@ -16,10 +16,110 @@ import { useFocusEffect } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import { authService, memorialService } from "../services";
+import {
+  useAudioPlayer,
+  useAudioPlayerStatus,
+  setAudioModeAsync,
+} from "expo-audio";
+import { authService, memorialService, storageService } from "../services";
 import { isSupabaseConfigured } from "../config/supabase";
 import { useSignOut } from "../context/AuthContext";
 import { Colors } from "../theme/colors";
+
+function AudioPlayerItem({ uri }) {
+  useEffect(() => {
+    setAudioModeAsync({ playsInSilentModeIOS: true }).catch(() => {});
+  }, []);
+  const player = useAudioPlayer({ uri });
+  const status = useAudioPlayerStatus(player);
+
+  const toggle = () => {
+    if (status.playing) {
+      player.pause();
+    } else {
+      const atEnd =
+        status.currentTime >= (status.duration || 0) - 0.1 &&
+        status.duration > 0;
+      if (atEnd) player.seekTo(0);
+      player.play();
+    }
+  };
+
+  const positionMs = (status.currentTime || 0) * 1000;
+  const durationMs = (status.duration || 0) * 1000;
+  const progress = durationMs > 0 ? positionMs / durationMs : 0;
+  const fmt = (ms) => {
+    const s = Math.floor((ms || 0) / 1000);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  };
+  const displayTime =
+    positionMs > 0
+      ? fmt(positionMs)
+      : durationMs > 0
+        ? fmt(durationMs)
+        : "0:00";
+
+  return (
+    <View style={audioItemStyles.row}>
+      <TouchableOpacity onPress={toggle} activeOpacity={0.8}>
+        <LinearGradient
+          colors={["#6cab90", "#3d7a62"]}
+          style={audioItemStyles.playBtn}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        >
+          <MaterialCommunityIcons
+            name={status.playing ? "pause" : "play"}
+            size={18}
+            color={Colors.white}
+            style={{ marginLeft: status.playing ? 0 : 2 }}
+          />
+        </LinearGradient>
+      </TouchableOpacity>
+      <View style={audioItemStyles.wave}>
+        {[...Array(22)].map((_, i) => (
+          <View
+            key={i}
+            style={[
+              audioItemStyles.bar,
+              { height: 5 + Math.abs(Math.sin(i * 0.6)) * 16 },
+              i / 22 <= progress
+                ? audioItemStyles.barFilled
+                : audioItemStyles.barEmpty,
+            ]}
+          />
+        ))}
+      </View>
+      <Text style={audioItemStyles.duration}>{displayTime}</Text>
+    </View>
+  );
+}
+
+const audioItemStyles = StyleSheet.create({
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F9F6F2",
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 10,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: "rgba(108,171,144,0.15)",
+  },
+  playBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  wave: { flex: 1, flexDirection: "row", alignItems: "center", gap: 2 },
+  bar: { width: 2.5, borderRadius: 2 },
+  barFilled: { backgroundColor: "#6cab90" },
+  barEmpty: { backgroundColor: "#C0B7AC", opacity: 0.65 },
+  duration: { fontSize: 12, color: Colors.ink500, fontWeight: "600" },
+});
 
 const { width: SCREEN_W } = Dimensions.get("window");
 const MONTHS = [
@@ -54,12 +154,11 @@ export default function ProfileScreen({ navigation, route }) {
     user?.email?.split("@")[0]?.replace(/[._]/g, " ") ||
     "User";
   const [profileName, setProfileName] = useState(displayName);
-  const [birthYear, setBirthYear] = useState("");
-  const [deathYear, setDeathYear] = useState("");
-  const [bio, setBio] = useState(
-    "Artist, educator, and devoted mother—painting life's canvas with love and color.",
-  );
-  const [avatar, setAvatar] = useState(null);
+  const [birthYear, setBirthYear] = useState(user?.birthYear || "");
+  const [deathYear, setDeathYear] = useState(user?.deathYear || "");
+  const [bio, setBio] = useState(user?.bio || "");
+  const [avatar, setAvatar] = useState(user?.photoURL || null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [activeTab, setActiveTab] = useState("Memories");
   const [memorials, setMemorials] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -106,13 +205,52 @@ export default function ProfileScreen({ navigation, route }) {
 
   const pickAvatar = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: "images",
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.8,
     });
-    if (!result.canceled && result.assets?.[0]?.uri)
-      setAvatar(result.assets[0].uri);
+    if (result.canceled || !result.assets?.[0]?.uri) return;
+
+    const localUri = result.assets[0].uri;
+    setAvatar(localUri); // show immediately for responsive feel
+    setUploadingAvatar(true);
+
+    try {
+      const userId = user?.uid;
+      const ext =
+        localUri.split(".").pop()?.split("?")[0]?.toLowerCase() || "jpg";
+      const fileName = `profile.${ext}`;
+      const folder = `avatars/${userId}`;
+
+      const uploadResult = await storageService.uploadFile(
+        localUri,
+        fileName,
+        folder,
+      );
+      if (!uploadResult.success) {
+        Alert.alert(
+          "Upload failed",
+          uploadResult.error || "Could not upload photo.",
+        );
+        return;
+      }
+
+      const saveResult = await authService.updateUserProfile({
+        photoURL: uploadResult.url,
+      });
+      if (!saveResult.success) {
+        Alert.alert(
+          "Save failed",
+          saveResult.error || "Could not save profile photo.",
+        );
+        return;
+      }
+
+      setAvatar(uploadResult.url); // replace local URI with the permanent URL
+    } finally {
+      setUploadingAvatar(false);
+    }
   };
 
   const signOut = () => {
@@ -178,7 +316,7 @@ export default function ProfileScreen({ navigation, route }) {
                   ]}
                   onError={() => {}}
                 />
-              ))}{" "}
+              ))}
               <LinearGradient
                 colors={["transparent", "rgba(0,0,0,0.35)"]}
                 style={styles.photoGradient}
@@ -279,28 +417,7 @@ export default function ProfileScreen({ navigation, route }) {
         </View>
       );
     return allAudios.map((uri, idx) => (
-      <View key={idx} style={styles.audioItem}>
-        <LinearGradient
-          colors={["#6cab90", "#3d7a62"]}
-          style={styles.audioPlayBtn}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-        >
-          <MaterialCommunityIcons name="play" size={18} color={Colors.white} />
-        </LinearGradient>
-        <View style={styles.audioWave}>
-          {[...Array(22)].map((_, i) => (
-            <View
-              key={i}
-              style={[
-                styles.audioBar,
-                { height: 5 + Math.abs(Math.sin(i * 0.6)) * 16 },
-              ]}
-            />
-          ))}
-        </View>
-        <Text style={styles.audioDuration}>0:12</Text>
-      </View>
+      <AudioPlayerItem key={`${uri}-${idx}`} uri={uri} />
     ));
   };
 
@@ -322,6 +439,12 @@ export default function ProfileScreen({ navigation, route }) {
               onPress={() => {
                 setShowMenu(false);
                 navigation.navigate("EditProfile", {
+                  currentFirstName: user?.firstName || "",
+                  currentLastName: user?.lastName || "",
+                  currentEmail: user?.email || "",
+                  currentPhone: user?.phone || "",
+                  currentAge: user?.age || "",
+                  currentGender: user?.gender || "",
                   currentName: profileName,
                   currentBio: bio,
                   currentBirthYear: birthYear,
@@ -420,7 +543,11 @@ export default function ProfileScreen({ navigation, route }) {
             >
               {/* White gap ring */}
               <View style={styles.avatarWhiteRing}>
-                <TouchableOpacity onPress={pickAvatar} activeOpacity={0.85}>
+                <TouchableOpacity
+                  onPress={pickAvatar}
+                  activeOpacity={0.85}
+                  disabled={uploadingAvatar}
+                >
                   <Image
                     source={{
                       uri:
@@ -429,6 +556,11 @@ export default function ProfileScreen({ navigation, route }) {
                     }}
                     style={styles.avatarImage}
                   />
+                  {uploadingAvatar && (
+                    <View style={styles.avatarUploadOverlay}>
+                      <ActivityIndicator color="#fff" size="small" />
+                    </View>
+                  )}
                 </TouchableOpacity>
               </View>
             </LinearGradient>
@@ -593,6 +725,17 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
     borderRadius: AVATAR_SIZE / 2,
+  },
+  avatarUploadOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: AVATAR_SIZE / 2,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   cameraBadge: {
     position: "absolute",

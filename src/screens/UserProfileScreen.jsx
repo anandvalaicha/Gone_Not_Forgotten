@@ -10,14 +10,87 @@ import {
   Dimensions,
   Alert,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { LinearGradient } from "expo-linear-gradient";
+import {
+  useAudioPlayer,
+  useAudioPlayerStatus,
+  setAudioModeAsync,
+} from "expo-audio";
 import { memorialService, authService } from "../services";
 import { isSupabaseConfigured } from "../config/supabase";
 import { Colors } from "../theme/colors";
 import AppLogo from "../components/AppLogo";
+import VideoPlayerModal from "../components/VideoPlayerModal";
 
 const { width: SCREEN_W } = Dimensions.get("window");
+
+// ── Inline audio player for plaque banner ──────────────────────────────────────
+function PlaqueAudioItem({ uri, index }) {
+  useEffect(() => {
+    setAudioModeAsync({ playsInSilentModeIOS: true }).catch(() => {});
+  }, []);
+  const player = useAudioPlayer({ uri });
+  const status = useAudioPlayerStatus(player);
+  const toggle = () => {
+    if (status.playing) {
+      player.pause();
+    } else {
+      const atEnd =
+        status.currentTime >= (status.duration || 0) - 0.1 &&
+        (status.duration || 0) > 0;
+      if (atEnd) player.seekTo(0);
+      player.play();
+    }
+  };
+  const fmt = (s) => {
+    const t = Math.round(s || 0);
+    return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
+  };
+  return (
+    <TouchableOpacity
+      onPress={toggle}
+      activeOpacity={0.8}
+      style={plaqueAudioStyles.row}
+    >
+      <View style={plaqueAudioStyles.playBtn}>
+        <MaterialCommunityIcons
+          name={status.playing ? "pause" : "play"}
+          size={18}
+          color="#fff"
+        />
+      </View>
+      <Text style={plaqueAudioStyles.label} numberOfLines={1}>
+        Audio {index + 1}
+      </Text>
+      <Text style={plaqueAudioStyles.time}>{fmt(status.currentTime)}</Text>
+    </TouchableOpacity>
+  );
+}
+const plaqueAudioStyles = StyleSheet.create({
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#e2f1ea",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginTop: 8,
+    gap: 10,
+  },
+  playBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#3d7a62",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  label: { flex: 1, fontSize: 13, color: Colors.ink700, fontWeight: "500" },
+  time: { fontSize: 12, color: Colors.ink500 },
+});
+// ─────────────────────────────────────────────────────────────────────────────
 const MONTHS = [
   "Jan",
   "Feb",
@@ -59,14 +132,46 @@ const DEMO_USER_PROFILE = {
 };
 
 export default function UserProfileScreen({ navigation, route }) {
-  const { userId, access } = route.params || {};
+  const { userId, access, plaqueId } = route.params || {};
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("Memories");
+  const [plaquePost, setPlaquePost] = useState(null);
+  const [plaqueLoading, setPlaqueLoading] = useState(!!plaqueId);
+  const [plaqueError, setPlaqueError] = useState(false);
+  const [videoUri, setVideoUri] = useState(null);
 
   useEffect(() => {
     loadUserProfile();
+    if (plaqueId) loadPlaquePost();
   }, [userId]);
+
+  const loadPlaquePost = async () => {
+    setPlaqueLoading(true);
+    setPlaqueError(false);
+
+    // 1. Try Supabase first (works cross-device)
+    const result = await memorialService.getPlaquePost(plaqueId);
+    if (result.success && result.plaquePost) {
+      setPlaquePost(result.plaquePost);
+      setPlaqueLoading(false);
+      return;
+    }
+
+    // 2. Fall back to AsyncStorage (same-device scan)
+    try {
+      const raw = await AsyncStorage.getItem(`plaque_${plaqueId}`);
+      if (raw) {
+        setPlaquePost(JSON.parse(raw));
+        setPlaqueLoading(false);
+        return;
+      }
+    } catch (_) {}
+
+    // Both failed — nothing to show
+    setPlaqueError(true);
+    setPlaqueLoading(false);
+  };
 
   const isSectionAllowed = (section) => {
     if (!userProfile) return false;
@@ -74,28 +179,69 @@ export default function UserProfileScreen({ navigation, route }) {
       bio: "showBio",
       memories: "showMemories",
       gallery: "showGallery",
+      videos: "showMemories",
+      audio: "showMemories",
     }[section];
 
     if (!userProfile[publicKey]) return false;
     if (!access || access.length === 0) return true;
+    // "bio" is part of the profile card — allow it when "profile" OR "bio" is granted
+    if (section === "bio") return access.includes("bio") || access.includes("profile");
+    // videos live inside memories
+    if (section === "videos") return access.includes("memories");
+    // audio has its own toggle key
+    if (section === "audio") return access.includes("audio");
     return access.includes(section);
   };
 
   const loadUserProfile = async () => {
     try {
-      if (!isSupabaseConfigured) {
-        // Demo mode
+      if (!isSupabaseConfigured || !userId) {
         setUserProfile(DEMO_USER_PROFILE);
         setLoading(false);
         return;
       }
 
-      // In a real app, you'd fetch user profile settings and public data
-      // For now, we'll show a demo profile
-      setUserProfile(DEMO_USER_PROFILE);
+      const result = await memorialService.getPublicProfile(userId);
+      if (!result.success) {
+        Alert.alert("Error", "Could not load user profile.");
+        navigation.goBack();
+        return;
+      }
+
+      const { profile } = result;
+
+      // If the profiles table has no row yet (display_name is still the
+      // default 'User' fallback), supplement with the signed-in user's local
+      // auth data so the name is never blank on your own profile.
+      const currentUser = authService.getCurrentUser();
+      const isSelf = currentUser?.uid === userId;
+      const resolvedName =
+        profile.displayName !== "User"
+          ? profile.displayName
+          : isSelf
+            ? currentUser?.displayName ||
+              currentUser?.email?.split("@")[0] ||
+              "User"
+            : "User";
+      const resolvedAvatar =
+        profile.photoURL || (isSelf ? currentUser?.photoURL : null);
+
+      setUserProfile({
+        userId: profile.userId,
+        displayName: resolvedName,
+        bio: profile.bio || (isSelf ? currentUser?.bio : '') || '',
+        avatar: resolvedAvatar,
+        birthYear: profile.birthYear || (isSelf ? currentUser?.birthYear : '') || '',
+        deathYear: profile.deathYear || (isSelf ? currentUser?.deathYear : '') || '',
+        showBio: true,
+        showMemories: true,
+        showGallery: true,
+        memorials: profile.memorials,
+      });
       setLoading(false);
     } catch (error) {
-      Alert.alert("Error", "Could not load user profile");
+      Alert.alert("Error", "Could not load user profile.");
       navigation.goBack();
     }
   };
@@ -126,7 +272,7 @@ export default function UserProfileScreen({ navigation, route }) {
     return userProfile.memorials.map((item) => {
       const raw = item.createdAt;
       const date =
-        raw instanceof Date ? raw : raw?.toDate ? raw.toDate() : new Date();
+        raw instanceof Date ? raw : raw?.toDate ? raw.toDate() : new Date(raw);
       const day = date.getDate();
       const month = MONTHS[date.getMonth()];
       const fullDate = `${month} ${day}, ${date.getFullYear()}`;
@@ -178,6 +324,71 @@ export default function UserProfileScreen({ navigation, route }) {
         </View>
       );
     });
+  };
+
+  const renderVideos = () => {
+    if (!isSectionAllowed("videos")) {
+      return (
+        <View style={styles.emptyBox}>
+          <MaterialCommunityIcons name="video-off-outline" size={44} color={Colors.ink300} />
+          <Text style={styles.emptyTitle}>Videos not shared</Text>
+          <Text style={styles.emptyText}>This user hasn't made their videos public.</Text>
+        </View>
+      );
+    }
+    const allVideos = userProfile.memorials?.flatMap((m) => m.videos || []) || [];
+    if (allVideos.length === 0) {
+      return (
+        <View style={styles.emptyBox}>
+          <MaterialCommunityIcons name="video-off-outline" size={44} color={Colors.ink300} />
+          <Text style={styles.emptyTitle}>No videos</Text>
+        </View>
+      );
+    }
+    return (
+      <View style={styles.videoGrid}>
+        {allVideos.map((uri, i) => (
+          <TouchableOpacity
+            key={i}
+            style={styles.videoThumb}
+            onPress={() => setVideoUri(uri)}
+            activeOpacity={0.85}
+          >
+            <View style={styles.videoThumbInner}>
+              <MaterialCommunityIcons name="play-circle" size={48} color="rgba(255,255,255,0.92)" />
+            </View>
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
+  };
+
+  const renderAudio = () => {
+    if (!isSectionAllowed("audio")) {
+      return (
+        <View style={styles.emptyBox}>
+          <MaterialCommunityIcons name="music-off" size={44} color={Colors.ink300} />
+          <Text style={styles.emptyTitle}>Audio not shared</Text>
+          <Text style={styles.emptyText}>This user hasn't made their audio public.</Text>
+        </View>
+      );
+    }
+    const allAudios = userProfile.memorials?.flatMap((m) => m.audios || []) || [];
+    if (allAudios.length === 0) {
+      return (
+        <View style={styles.emptyBox}>
+          <MaterialCommunityIcons name="music-off" size={44} color={Colors.ink300} />
+          <Text style={styles.emptyTitle}>No audio</Text>
+        </View>
+      );
+    }
+    return (
+      <View style={styles.audioList}>
+        {allAudios.map((uri, i) => (
+          <PlaqueAudioItem key={i} uri={uri} index={i} />
+        ))}
+      </View>
+    );
   };
 
   const renderGallery = () => {
@@ -286,12 +497,16 @@ export default function UserProfileScreen({ navigation, route }) {
             style={styles.backBtn}
             onPress={() => navigation.goBack()}
           >
-            <MaterialCommunityIcons name="arrow-left" size={20} color="#fff" />
+            <MaterialCommunityIcons
+              name="arrow-left"
+              size={20}
+              color="#3d7a62"
+            />
           </TouchableOpacity>
 
           {/* App logo */}
           <View style={{ position: "absolute", top: 56, right: 20 }}>
-            <AppLogo size={32} tintColor="#fff" />
+            <AppLogo size={32} tintColor="#3d7a62" />
           </View>
 
           {/* Decorative green arc */}
@@ -306,10 +521,18 @@ export default function UserProfileScreen({ navigation, route }) {
               end={{ x: 1, y: 1 }}
             >
               <View style={styles.avatarWhiteRing}>
-                <Image
-                  source={{ uri: userProfile.avatar }}
-                  style={styles.avatarImage}
-                />
+                {userProfile.avatar ? (
+                  <Image
+                    source={{ uri: userProfile.avatar }}
+                    style={styles.avatarImage}
+                  />
+                ) : (
+                  <View style={[styles.avatarImage, styles.avatarFallback]}>
+                    <Text style={styles.avatarInitial}>
+                      {(userProfile.displayName?.[0] || "?").toUpperCase()}
+                    </Text>
+                  </View>
+                )}
               </View>
             </LinearGradient>
           </View>
@@ -317,52 +540,184 @@ export default function UserProfileScreen({ navigation, route }) {
           {/* Name */}
           <Text style={styles.name}>{userProfile.displayName}</Text>
 
+          {/* Birth – Death years */}
+          {(userProfile.birthYear || userProfile.deathYear) && (
+            <Text style={styles.lifeYears}>
+              {userProfile.birthYear || "?"}
+              {" – "}
+              {userProfile.deathYear || "Present"}
+            </Text>
+          )}
+
           {/* Bio - only show if user allows */}
           {isSectionAllowed("bio") && userProfile.bio && (
             <Text style={styles.bio}>{userProfile.bio}</Text>
           )}
         </View>
 
-        {/* Content */}
-        <View style={styles.sheet}>
-          {/* Tab bar */}
-          <View style={styles.tabBar}>
-            {["Memories", "Gallery"].map((tab) => (
-              <TouchableOpacity
-                key={tab}
-                style={[
-                  styles.tabBtn,
-                  activeTab === tab && styles.tabBtnActive,
-                ]}
-                onPress={() => setActiveTab(tab)}
-              >
-                {activeTab === tab ? (
-                  <View style={styles.tabBtnActiveInner}>
-                    <Text style={styles.tabLabelActive}>{tab}</Text>
-                  </View>
-                ) : (
-                  <Text style={styles.tabLabel}>{tab}</Text>
+        {/* Plaque Post — shown when scanned from a Plaque QR */}
+        {plaqueId && (
+          <View style={styles.plaqueBanner}>
+            {/* Header */}
+            <View style={styles.plaqueBannerHeader}>
+              <MaterialCommunityIcons
+                name="qrcode-scan"
+                size={18}
+                color="#3d7a62"
+              />
+              <Text style={styles.plaqueBannerTitle}>Memorial Note</Text>
+            </View>
+
+            {/* Loading state */}
+            {plaqueLoading && (
+              <ActivityIndicator
+                size="small"
+                color={Colors.green700}
+                style={{ marginVertical: 16 }}
+              />
+            )}
+
+            {/* Error state */}
+            {!plaqueLoading && plaqueError && (
+              <View style={styles.plaqueErrorBox}>
+                <MaterialCommunityIcons
+                  name="cloud-off-outline"
+                  size={28}
+                  color={Colors.ink300}
+                />
+                <Text style={styles.plaqueErrorText}>
+                  Could not load the shared content.{"\n"}This link may only
+                  work on the original device.
+                </Text>
+              </View>
+            )}
+
+            {/* Loaded content */}
+            {!plaqueLoading && plaquePost && (
+              <>
+                {!!plaquePost.description && (
+                  <Text style={styles.plaqueBannerDesc}>
+                    {plaquePost.description}
+                  </Text>
                 )}
-              </TouchableOpacity>
-            ))}
-          </View>
 
-          {/* Green accent line */}
-          <View style={styles.accentLine}>
-            <LinearGradient
-              colors={["transparent", "#6cab90", "transparent"]}
-              style={styles.accentLineGrad}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
+                {plaquePost.photos?.length > 0 && (
+                  <>
+                    <Text style={styles.plaqueSectionLabel}>Photos</Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      style={{ marginTop: 6 }}
+                    >
+                      {plaquePost.photos.map((uri, i) => (
+                        <Image
+                          key={i}
+                          source={{ uri }}
+                          style={styles.plaqueThumb}
+                        />
+                      ))}
+                    </ScrollView>
+                  </>
+                )}
+
+                {plaquePost.videos?.length > 0 && (
+                  <>
+                    <Text style={styles.plaqueSectionLabel}>Videos</Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      style={{ marginTop: 6 }}
+                    >
+                      {plaquePost.videos.map((uri, i) => (
+                        <TouchableOpacity
+                          key={i}
+                          onPress={() => setVideoUri(uri)}
+                          style={styles.plaqueVideoThumb}
+                        >
+                          <MaterialCommunityIcons
+                            name="play-circle"
+                            size={40}
+                            color="rgba(255,255,255,0.9)"
+                          />
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </>
+                )}
+
+                {plaquePost.audios?.length > 0 && (
+                  <>
+                    <Text style={styles.plaqueSectionLabel}>Audio</Text>
+                    {plaquePost.audios.map((uri, i) => (
+                      <PlaqueAudioItem key={i} uri={uri} index={i} />
+                    ))}
+                  </>
+                )}
+              </>
+            )}
+          </View>
+        )}
+
+        {/* Video modal */}
+        {videoUri && (
+          <VideoPlayerModal uri={videoUri} onClose={() => setVideoUri(null)} />
+        )}
+
+        {/* When viewing via Plaque QR — show only curated content, not the full profile */}
+        {plaqueId ? (
+          <View style={styles.plaqueFooter}>
+            <MaterialCommunityIcons
+              name="shield-check-outline"
+              size={16}
+              color={Colors.green700}
             />
+            <Text style={styles.plaqueFooterText}>
+              This is a curated share — only selected content is shown
+            </Text>
           </View>
+        ) : (
+          <View style={styles.sheet}>
+            {/* Tab bar */}
+            <View style={styles.tabBar}>
+              {["Memories", "Gallery", "Videos", "Audio"].map((tab) => (
+                <TouchableOpacity
+                  key={tab}
+                  style={[
+                    styles.tabBtn,
+                    activeTab === tab && styles.tabBtnActive,
+                  ]}
+                  onPress={() => setActiveTab(tab)}
+                >
+                  {activeTab === tab ? (
+                    <View style={styles.tabBtnActiveInner}>
+                      <Text style={styles.tabLabelActive}>{tab}</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.tabLabel}>{tab}</Text>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
 
-          {/* Tab content */}
-          <View style={styles.tabContent}>
-            {activeTab === "Memories" && renderMemories()}
-            {activeTab === "Gallery" && renderGallery()}
+            {/* Green accent line */}
+            <View style={styles.accentLine}>
+              <LinearGradient
+                colors={["transparent", "#6cab90", "transparent"]}
+                style={styles.accentLineGrad}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+              />
+            </View>
+
+            {/* Tab content */}
+            <View style={styles.tabContent}>
+              {activeTab === "Memories" && renderMemories()}
+              {activeTab === "Gallery" && renderGallery()}
+              {activeTab === "Videos" && renderVideos()}
+              {activeTab === "Audio" && renderAudio()}
+            </View>
           </View>
-        </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -464,6 +819,16 @@ const styles = StyleSheet.create({
     height: "100%",
     borderRadius: 60,
   },
+  avatarFallback: {
+    backgroundColor: Colors.green700,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarInitial: {
+    fontSize: 48,
+    fontWeight: "700",
+    color: "#fff",
+  },
   name: {
     fontSize: 28,
     fontWeight: "700",
@@ -478,6 +843,101 @@ const styles = StyleSheet.create({
     marginTop: 8,
     lineHeight: 22,
     paddingHorizontal: 32,
+  },
+  lifeYears: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: Colors.green700,
+    letterSpacing: 1,
+    marginTop: 6,
+    textAlign: "center",
+  },
+
+  // Plaque post banner
+  plaqueBanner: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    backgroundColor: "#f0f7f4",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#c8e6d8",
+    padding: 16,
+  },
+  plaqueBannerHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 6,
+  },
+  plaqueBannerTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#3d7a62",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  plaqueBannerDesc: {
+    fontSize: 15,
+    color: Colors.ink700,
+    lineHeight: 22,
+    marginTop: 4,
+  },
+  plaqueErrorBox: {
+    alignItems: "center",
+    paddingVertical: 16,
+    gap: 10,
+  },
+  plaqueErrorText: {
+    fontSize: 13,
+    color: Colors.ink400,
+    textAlign: "center",
+    lineHeight: 19,
+  },
+  plaqueSectionLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#3d7a62",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginTop: 12,
+  },
+  plaqueThumb: {
+    width: 90,
+    height: 90,
+    borderRadius: 10,
+    marginRight: 8,
+  },
+  plaqueVideoThumb: {
+    width: 90,
+    height: 90,
+    borderRadius: 10,
+    marginRight: 8,
+    backgroundColor: "#1c1c1e",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  // Plaque-only footer note
+  plaqueFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 40,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: "#f0f7f4",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#c8e6d8",
+  },
+  plaqueFooterText: {
+    fontSize: 13,
+    color: Colors.green700,
+    fontWeight: "500",
+    flexShrink: 1,
   },
 
   // Sheet
@@ -636,6 +1096,31 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.ink100,
   },
 
+  // Video grid
+  videoGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    paddingBottom: 16,
+  },
+  videoThumb: {
+    width: "48%",
+    aspectRatio: 16 / 9,
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  videoThumbInner: {
+    flex: 1,
+    backgroundColor: "#1A1A2E",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  // Audio list
+  audioList: {
+    paddingBottom: 16,
+  },
+
   // Empty states
   emptyBox: {
     paddingVertical: 60,
@@ -653,7 +1138,3 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 });
-// </content>
-<parameter name="filePath">
-  /Users/anandvalaicha/GoneNotForgotten/src/screens/UserProfileScreen.jsx
-</parameter>;

@@ -3,9 +3,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const SETTINGS_KEY = 'gonenotforgotten-settings';
 
 const defaultSettings = {
-  notificationsEnabled: true,
+  // Privacy & Visibility
   publicProfileEnabled: false,
+  showLifeDates: true,
+  allowContributions: false,
+  // Notifications
+  notificationsEnabled: true,
+  anniversaryReminders: true,
+  visitorAlerts: true,
   dailySummaryEnabled: true,
+  // Plaque QR Access
   qrAccess: {
     profile: true,
     memories: true,
@@ -47,6 +54,15 @@ export const settingsService = {
   updateSetting: async (key, value) => {
     const current = await settingsService.loadSettings();
     const updated = { ...current, [key]: value };
+    return settingsService.saveSettings(updated);
+  },
+
+  updateQrAccess: async (key, value) => {
+    const current = await settingsService.loadSettings();
+    const updated = {
+      ...current,
+      qrAccess: { ...current.qrAccess, [key]: value },
+    };
     return settingsService.saveSettings(updated);
   },
 

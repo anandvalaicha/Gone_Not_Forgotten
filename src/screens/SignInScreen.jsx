@@ -1,43 +1,47 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TextInput,
   TouchableOpacity,
-  Alert,
 } from "react-native";
 import { authService } from "../services";
 import { Colors } from "../theme/colors";
 import AppLogo from "../components/AppLogo";
+import StatusBanner from "../components/StatusBanner";
 
 export default function SignInScreen({ navigation }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [banner, setBanner] = useState(null);
+
+  const passwordRef = useRef(null);
+
+  const clearBanner = () => setBanner(null);
 
   const onSignIn = async () => {
     if (!email.trim() || !password) {
-      Alert.alert("Validation", "Email and password are required.");
+      setBanner({ type: "error", text: "Email and password are required." });
       return;
     }
+    clearBanner();
     setLoading(true);
     const result = await authService.signIn(email.trim(), password);
     setLoading(false);
     if (!result.success) {
-      Alert.alert(
-        "Sign in failed",
-        result.error || "Please check your credentials",
-      );
+      setBanner({ type: "error", text: result.error || "Incorrect email or password. Please try again." });
     }
   };
 
   const onGoogleSignIn = async () => {
+    clearBanner();
     setLoading(true);
     const result = await authService.signInWithGoogle();
     setLoading(false);
     if (!result.success) {
-      Alert.alert("Google sign in failed", result.error || "Please try again");
+      setBanner({ type: "error", text: result.error || "Google sign in failed. Please try again." });
     }
   };
 
@@ -52,12 +56,6 @@ export default function SignInScreen({ navigation }) {
         <Text style={styles.brand}>Gone Not Forgotten</Text>
         <Text style={styles.subtitle}>Sign in to continue</Text>
 
-        <View style={styles.demoBox}>
-          <Text style={styles.demoTitle}>Temporary demo login</Text>
-          <Text style={styles.demoText}>Email: demo@gonenotforgotten.com</Text>
-          <Text style={styles.demoText}>Password: Demo@1234</Text>
-        </View>
-
         <TextInput
           style={styles.input}
           placeholder="Email"
@@ -65,18 +63,31 @@ export default function SignInScreen({ navigation }) {
           autoCapitalize="none"
           keyboardType="email-address"
           value={email}
-          onChangeText={setEmail}
+          onChangeText={(v) => { setEmail(v); clearBanner(); }}
+          returnKeyType="next"
+          onSubmitEditing={() => passwordRef.current?.focus()}
+          blurOnSubmit={false}
         />
         <TextInput
+          ref={passwordRef}
           style={styles.input}
           placeholder="Password"
           placeholderTextColor={Colors.ink300}
           secureTextEntry
           value={password}
-          onChangeText={setPassword}
+          onChangeText={(v) => { setPassword(v); clearBanner(); }}
+          returnKeyType="done"
+          onSubmitEditing={onSignIn}
         />
         <TouchableOpacity
-          style={styles.button}
+          style={styles.forgotRow}
+          onPress={() => navigation.navigate("ForgotPassword")}
+        >
+          <Text style={styles.forgotText}>Forgot password?</Text>
+        </TouchableOpacity>
+        <StatusBanner type={banner?.type} message={banner?.text} />
+        <TouchableOpacity
+          style={[styles.button, loading && { opacity: 0.7 }]}
           onPress={onSignIn}
           disabled={loading}
         >
@@ -140,22 +151,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 20,
   },
-  demoBox: {
-    backgroundColor: Colors.ink100,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
-  },
-  demoTitle: {
-    color: Colors.ink700,
-    fontWeight: "700",
-    fontSize: 13,
-    marginBottom: 4,
-  },
-  demoText: {
-    color: Colors.ink500,
-    fontSize: 13,
-  },
   input: {
     height: 50,
     borderWidth: 1,
@@ -194,6 +189,16 @@ const styles = StyleSheet.create({
     color: Colors.green700,
     fontWeight: "600",
     fontSize: 15,
+  },
+  forgotRow: {
+    alignSelf: "flex-end",
+    marginBottom: 10,
+    marginTop: -4,
+  },
+  forgotText: {
+    color: Colors.green700,
+    fontSize: 13,
+    fontWeight: "600",
   },
   switchRow: {
     flexDirection: "row",

@@ -13,9 +13,12 @@ import {
   Share,
   ActivityIndicator,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
-import * as FileSystem from "expo-file-system";
+// expo-file-system v19 split the API. Use legacy for writeAsStringAsync /
+// cacheDirectory / EncodingType.
+import * as FileSystem from "expo-file-system/legacy";
 import * as MediaLibrary from "expo-media-library";
 import QRCode from "react-native-qrcode-svg";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
@@ -24,7 +27,7 @@ import { memorialService, authService } from "../services";
 import { Colors } from "../theme/colors";
 import AppLogo from "../components/AppLogo";
 
-export default function PlukQRScreen({ navigation }) {
+export default function PlaqueQRScreen({ navigation }) {
   const qrRef = useRef(null);
 
   // selected media
@@ -41,36 +44,25 @@ export default function PlukQRScreen({ navigation }) {
 
   // QR generated state
   const [qrGenerated, setQrGenerated] = useState(false);
-  const [plukId] = useState(() => `pluk-${Date.now()}`);
+  const [plaqueId] = useState(() => `plaque-${Date.now()}`);
 
   const user = authService.getCurrentUser();
-  const userId = user?.uid || "demo-user-001";
+  const userId = user?.uid;
   const displayName =
     user?.displayName ||
     user?.email?.split("@")[0]?.replace(/[._]/g, " ") ||
-    "Pluk Memorial";
+    "Plaque Memorial";
 
-  const qrValue = `https://gonenotforgotten.app/pluk/${plukId}`;
+  // Embed userId so the scanner can load the right person's profile.
+  // Falls back to a plaque-only URL if the user somehow isn't loaded yet.
+  const qrValue = userId
+    ? `https://gonenotforgotten.app/profile/${userId}?plaque=${plaqueId}`
+    : `https://gonenotforgotten.app/plaque/${plaqueId}`;
 
   // Load user memorials for the picker
   const loadMemorials = async () => {
     setLoadingMemorials(true);
-    if (!isSupabaseConfigured) {
-      setMemorials([
-        {
-          id: "demo-memorial-1",
-          title: "Eleanor Grace",
-          photos: [
-            "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=900&q=80",
-            "https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?w=900&q=80",
-            "https://images.unsplash.com/photo-1511895426328-dc8714191011?w=900&q=80",
-            "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=900&q=80",
-          ],
-          videos: [],
-          audios: [],
-        },
-      ]);
-    } else {
+    if (isSupabaseConfigured && userId) {
       const result = await memorialService.getUserMemorials(userId);
       if (result.success) {
         setMemorials(result.memorials);
@@ -103,7 +95,7 @@ export default function PlukQRScreen({ navigation }) {
   const uploadNewPhoto = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: "images",
         allowsEditing: false,
         quality: 0.7,
         allowsMultipleSelection: true,
@@ -118,7 +110,7 @@ export default function PlukQRScreen({ navigation }) {
   const uploadNewVideo = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+        mediaTypes: "videos",
         allowsEditing: false,
         quality: 0.7,
       });
@@ -146,7 +138,7 @@ export default function PlukQRScreen({ navigation }) {
   const removeAudio = (idx) => setAudios((a) => a.filter((_, i) => i !== idx));
 
   // ── Generate QR ──
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (
       !photos.length &&
       !videos.length &&
@@ -156,6 +148,31 @@ export default function PlukQRScreen({ navigation }) {
       Alert.alert("Empty", "Please add some media or write something first.");
       return;
     }
+
+    const plaqueData = {
+      id: plaqueId,
+      description: description.trim(),
+      photos,
+      videos,
+      audios,
+    };
+
+    // Save to AsyncStorage first — always works on same device
+    try {
+      await AsyncStorage.setItem(`plaque_${plaqueId}`, JSON.stringify(plaqueData));
+    } catch (_) {}
+
+    // Save to Supabase so other devices can scan and see the content
+    if (isSupabaseConfigured && userId) {
+      const result = await memorialService.savePlaquePost(plaqueId, userId, plaqueData);
+      if (!result.success) {
+        Alert.alert(
+          "Heads up",
+          "Your QR was created but couldn't be saved to the cloud. It will only work on this device.",
+        );
+      }
+    }
+
     setQrGenerated(true);
   };
 
@@ -174,7 +191,7 @@ export default function PlukQRScreen({ navigation }) {
       qrRef.current.toDataURL(async (dataURL) => {
         try {
           const fileUri =
-            FileSystem.cacheDirectory + `pluk-qr-${Date.now()}.png`;
+            FileSystem.cacheDirectory + `plaque-qr-${Date.now()}.png`;
           await FileSystem.writeAsStringAsync(fileUri, dataURL, {
             encoding: FileSystem.EncodingType.Base64,
           });
@@ -208,11 +225,10 @@ export default function PlukQRScreen({ navigation }) {
 
   const mediaSummary = `${photos.length} photo${photos.length !== 1 ? "s" : ""} · ${videos.length} video${videos.length !== 1 ? "s" : ""} · ${audios.length} audio${audios.length !== 1 ? "s" : ""}`;
 
-  // ─────────── QR Result View (matches QRCodeScreen dark style) ───────────
+  // ─────────── QR Result View ───────────
   if (qrGenerated) {
     return (
       <View style={styles.container}>
-        {/* Ambient glow blobs */}
         <View style={styles.glowTop} />
         <View style={styles.glowBottom} />
 
@@ -224,77 +240,170 @@ export default function PlukQRScreen({ navigation }) {
           <MaterialCommunityIcons name="arrow-left" size={20} color="#fff" />
         </TouchableOpacity>
 
-        {/* Title */}
-        <View style={styles.titleArea}>
-          <AppLogo size={36} tintColor="#fff" />
-          <Text style={styles.title}>Pluk QR Code</Text>
-          <Text style={styles.subtitle}>Share your curated memorial</Text>
-        </View>
+        <ScrollView
+          contentContainerStyle={styles.resultScroll}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Title */}
+          <View style={styles.titleArea}>
+            <AppLogo size={36} tintColor="#fff" />
+            <Text style={styles.title}>Plaque QR Code</Text>
+            <Text style={styles.subtitle}>Share your curated memorial</Text>
+          </View>
 
-        {/* QR Card */}
-        <View style={styles.centerArea}>
-          <View style={styles.glowRing}>
-            <View style={styles.qrCard}>
-              <Text style={styles.qrName}>{displayName}</Text>
-              <View style={styles.divider} />
-
-              <View style={styles.qrWrapper}>
-                <QRCode
-                  value={qrValue}
-                  size={210}
-                  color="#1A1A1A"
-                  backgroundColor="#FFFFFF"
-                  getRef={(ref) => (qrRef.current = ref)}
-                />
-              </View>
-
-              {/* Summary badge */}
-              <View style={styles.urlRow}>
-                <MaterialCommunityIcons
-                  name="qrcode"
-                  size={14}
-                  color={Colors.green700}
-                />
-                <Text style={styles.urlText} numberOfLines={1}>
-                  {mediaSummary}
-                </Text>
+          {/* QR Card */}
+          <View style={{ alignItems: "center", marginBottom: 20 }}>
+            <View style={styles.glowRing}>
+              <View style={styles.qrCard}>
+                <Text style={styles.qrName}>{displayName}</Text>
+                <View style={styles.divider} />
+                <View style={styles.qrWrapper}>
+                  <QRCode
+                    value={qrValue}
+                    size={200}
+                    color="#1A1A1A"
+                    backgroundColor="#FFFFFF"
+                    getRef={(ref) => (qrRef.current = ref)}
+                  />
+                  {/* Logo embedded in center */}
+                  <View style={styles.avatarOverlay}>
+                    <AppLogo size={28} />
+                  </View>
+                </View>
+                <View style={styles.urlRow}>
+                  <MaterialCommunityIcons
+                    name="qrcode"
+                    size={14}
+                    color={Colors.green700}
+                  />
+                  <Text style={styles.urlText} numberOfLines={1}>
+                    {mediaSummary}
+                  </Text>
+                </View>
               </View>
             </View>
           </View>
-        </View>
 
-        {/* Access note */}
-        {description.trim() ? (
-          <View style={styles.accessNote}>
-            <Text style={styles.accessNoteText} numberOfLines={2}>
-              "{description.trim()}"
-            </Text>
+          {/* ── Content Preview ── */}
+          <View style={styles.previewCard}>
+            <View style={styles.previewHeader}>
+              <MaterialCommunityIcons
+                name="eye-outline"
+                size={16}
+                color="rgba(255,255,255,0.7)"
+              />
+              <Text style={styles.previewHeaderText}>What they will see</Text>
+            </View>
+
+            {/* Description */}
+            {description.trim() ? (
+              <View style={styles.previewDescBox}>
+                <Text style={styles.previewDescLabel}>Message</Text>
+                <Text style={styles.previewDesc}>{description.trim()}</Text>
+              </View>
+            ) : null}
+
+            {/* Photos */}
+            {photos.length > 0 && (
+              <View style={styles.previewSection}>
+                <Text style={styles.previewSectionLabel}>
+                  Photos ({photos.length})
+                </Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={{ marginTop: 8 }}
+                >
+                  {photos.map((uri, i) => (
+                    <Image
+                      key={i}
+                      source={{ uri }}
+                      style={styles.previewThumb}
+                    />
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+
+            {/* Videos */}
+            {videos.length > 0 && (
+              <View style={styles.previewSection}>
+                <Text style={styles.previewSectionLabel}>
+                  Videos ({videos.length})
+                </Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={{ marginTop: 8 }}
+                >
+                  {videos.map((uri, i) => (
+                    <View key={i} style={styles.previewVideoThumb}>
+                      <MaterialCommunityIcons
+                        name="play-circle"
+                        size={32}
+                        color="rgba(255,255,255,0.85)"
+                      />
+                    </View>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+
+            {/* Audio */}
+            {audios.length > 0 && (
+              <View style={styles.previewSection}>
+                <Text style={styles.previewSectionLabel}>
+                  Audio ({audios.length})
+                </Text>
+                {audios.map((uri, i) => (
+                  <View key={i} style={styles.previewAudioRow}>
+                    <MaterialCommunityIcons
+                      name="music-note"
+                      size={16}
+                      color={Colors.green300}
+                    />
+                    <Text style={styles.previewAudioName} numberOfLines={1}>
+                      {fileName(uri)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
           </View>
-        ) : null}
 
-        {/* Bottom buttons */}
-        <View style={styles.bottomBtns}>
-          <TouchableOpacity style={styles.shareBtn} onPress={handleDownloadQR}>
-            <MaterialCommunityIcons name="download" size={18} color="#fff" />
-            <Text style={styles.shareBtnText}>Download QR</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.manageBtn}
-            onPress={() =>
-              Share.share({
-                message: `View this Pluk memorial: ${qrValue}`,
-                url: qrValue,
-              }).catch(() => {})
-            }
-          >
-            <MaterialCommunityIcons
-              name="share-variant"
-              size={18}
-              color="#fff"
-            />
-            <Text style={styles.manageBtnText}>Share a link</Text>
-          </TouchableOpacity>
-        </View>
+          {/* Bottom buttons */}
+          <View style={styles.bottomBtns}>
+            <TouchableOpacity
+              style={styles.shareBtn}
+              onPress={handleDownloadQR}
+            >
+              <MaterialCommunityIcons name="download" size={18} color="#fff" />
+              <Text style={styles.shareBtnText}>Download QR</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.manageBtn}
+              onPress={() => {
+                const deepLink = userId
+                  ? `gonnotforgotten://profile/${userId}?plaque=${plaqueId}`
+                  : `gonnotforgotten://plaque/${plaqueId}`;
+                Share.share({
+                  title: `${displayName}'s Memorial Plaque`,
+                  message: `View ${displayName}'s memorial plaque on Gone Not Forgotten:\n${deepLink}`,
+                  url: deepLink,
+                }).catch(() => {});
+              }}
+            >
+              <MaterialCommunityIcons
+                name="share-variant"
+                size={18}
+                color="#fff"
+              />
+              <Text style={styles.manageBtnText}>Share a link</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={{ height: 30 }} />
+        </ScrollView>
       </View>
     );
   }
@@ -317,7 +426,7 @@ export default function PlukQRScreen({ navigation }) {
       {/* Title */}
       <View style={styles.titleArea}>
         <AppLogo size={36} tintColor="#fff" />
-        <Text style={styles.title}>Pluk QR Code</Text>
+        <Text style={styles.title}>Plaque QR Code</Text>
         <Text style={styles.subtitle}>
           Select media & write, then generate a QR
         </Text>
@@ -330,7 +439,12 @@ export default function PlukQRScreen({ navigation }) {
       >
         {/* Write about them */}
         <View style={styles.builderSection}>
-          <Text style={styles.builderSectionTitle}>Write about them</Text>
+          <View style={styles.sectionTitleRow}>
+            <Text style={styles.builderSectionTitle}>Write about them</Text>
+            {description.length > 0 && (
+              <Text style={styles.charCount}>{description.length} chars</Text>
+            )}
+          </View>
           <TextInput
             style={styles.textArea}
             placeholder="Share your thoughts, memories, or a tribute…"
@@ -721,6 +835,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     position: "relative",
   },
+  avatarOverlay: {
+    position: "absolute",
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   urlRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -791,6 +914,97 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 
+  // ── QR result scroll ──
+  resultScroll: {
+    paddingTop: 56,
+    paddingHorizontal: 20,
+  },
+
+  // ── Content preview card ──
+  previewCard: {
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.14)",
+    padding: 18,
+    marginBottom: 20,
+  },
+  previewHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    marginBottom: 14,
+  },
+  previewHeaderText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "rgba(255,255,255,0.7)",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  previewDescBox: {
+    backgroundColor: "rgba(255,255,255,0.07)",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+  },
+  previewDescLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.green300,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  previewDesc: {
+    fontSize: 14,
+    color: "#FFFFFF",
+    lineHeight: 20,
+  },
+  previewSection: {
+    marginBottom: 14,
+  },
+  previewSectionLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: Colors.green300,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  previewThumb: {
+    width: 80,
+    height: 80,
+    borderRadius: 10,
+    marginRight: 8,
+    backgroundColor: "rgba(255,255,255,0.1)",
+  },
+  previewVideoThumb: {
+    width: 80,
+    height: 80,
+    borderRadius: 10,
+    marginRight: 8,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.15)",
+  },
+  previewAudioRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginTop: 6,
+  },
+  previewAudioName: {
+    flex: 1,
+    fontSize: 13,
+    color: "rgba(255,255,255,0.75)",
+  },
+
   // ── Builder scroll content ──
   builderContent: {
     paddingHorizontal: 20,
@@ -806,11 +1020,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.12)",
   },
+  sectionTitleRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 10,
+  },
   builderSectionTitle: {
     fontSize: 16,
     fontWeight: "700",
     color: "#FFFFFF",
-    marginBottom: 10,
+  },
+  charCount: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.45)",
+    fontWeight: "500",
   },
 
   // ── Text area (dark style) ──
