@@ -1,3 +1,5 @@
+// UI screen for Splash
+
 import { useEffect, useRef } from "react";
 import { View, Text, StyleSheet, Animated, Dimensions } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";

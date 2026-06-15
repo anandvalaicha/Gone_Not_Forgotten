@@ -1,3 +1,5 @@
+// UI screen for PlaqueQR
+
 import { useEffect, useRef, useState } from "react";
 import {
   View,

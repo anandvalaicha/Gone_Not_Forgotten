@@ -1,3 +1,5 @@
+// Main app entry and navigation setup
+
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, ActivityIndicator, StyleSheet, Linking } from 'react-native';

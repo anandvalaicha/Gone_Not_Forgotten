@@ -1,12 +1,13 @@
+// Supabase client configuration
+
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// ─── YOUR SUPABASE PROJECT CREDENTIALS ────────────────────────────────────────
-// URL:  https://rsxeuflqdwoeohyvrlgp.supabase.co
-// KEY:  Project Settings → API → anon public  (the long eyJ... string)
-export const SUPABASE_URL = 'https://rsxeuflqdwoeohyvrlgp.supabase.co';
-export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJzeGV1ZmxxZHdvZW9oeXZybGdwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczNTQwNzEsImV4cCI6MjA5MjkzMDA3MX0.S4H5q5wqhjMj04Ovnalum48UCZTrzGLEon7Xcn2c99c';
-// ──────────────────────────────────────────────────────────────────────────────
+export const SUPABASE_URL =
+  process.env.EXPO_PUBLIC_SUPABASE_URL ?? 'https://rsxeuflqdwoeohyvrlgp.supabase.co';
+export const SUPABASE_ANON_KEY =
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ??
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJzeGV1ZmxxZHdvZW9oeXZybGdwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczNTQwNzEsImV4cCI6MjA5MjkzMDA3MX0.S4H5q5wqhjMj04Ovnalum48UCZTrzGLEon7Xcn2c99c';
 
 export const isSupabaseConfigured =
   typeof SUPABASE_ANON_KEY === 'string' &&

@@ -1,0 +1,118 @@
+Test Inventory for Gone_Not_Forgotten
+======================================
+
+Total tests: 94
+
+Files and test cases:
+
+src/__tests__/context/AuthContext.test.js (8 tests)
+- Purpose: validates the `AuthContext` hooks and default context values.
+- it('returns the signOut function from context', () => {
+- it('calls the signOut function when invoked', () => {
+- it('returns a no-op function when used outside a provider (default context)', () => {
+- it('returns the onPasswordReset function from context', () => {
+- it('calls the onPasswordReset function when invoked', () => {
+- it('returns a no-op function when used outside a provider (default context)', () => {
+- it('default signOut is a function', () => {
+- it('default onPasswordReset is a function', () => {
+
+src/__tests__/services/authService.test.js (31 tests)
+- Purpose: covers signup, login, logout, profile update, password reset, session handling, and user normalization logic.
+- it('returns success and normalized user on successful signup', async () => {
+- it('returns error when signup fails', async () => {
+- it('builds display_name from first and last name', async () => {
+- it('includes optional profile fields in metadata', async () => {
+- it('returns success and normalized user on successful login', async () => {
+- it('returns error on wrong credentials', async () => {
+- it('sets currentUser after successful login', async () => {
+- it('always returns failure with explanation', async () => {
+- it('clears currentUser and returns success', async () => {
+- it('removes the auth token key from AsyncStorage', async () => {
+- it('sweeps extra supabase keys from AsyncStorage', async () => {
+- it('calls supabase.auth.signOut with local scope', async () => {
+- it('still succeeds if supabase signOut throws', async () => {
+- it('maps camelCase fields to snake_case metadata', async () => {
+- it('maps photoURL to photo_url', async () => {
+- it('includes email in payload when provided', async () => {
+- it('returns error when update fails', async () => {
+- it('calls resetPasswordForEmail with trimmed email', async () => {
+- it('passes redirectTo option when provided', async () => {
+- it('returns error when reset fails', async () => {
+- it('calls updateUser with new password', async () => {
+- it('returns error when change fails', async () => {
+- it('fires callback immediately with current session user', async () => {
+- it('fires callback with null when no session exists', async () => {
+- it('returns an unsubscribe function', () => {
+- it('returns null before any login', () => {
+- it('returns user after successful login', async () => {
+- it('falls back displayName to email prefix when no name metadata', async () => {
+- it('prefers display_name over first_name + last_name', async () => {
+- it('uses photo_url for photoURL', async () => {
+- it('falls back to avatar_url when photo_url is absent', async () => {
+
+src/__tests__/services/memorialService.test.js (22 tests)
+- Purpose: verifies memorial CRUD operations, plaque post behavior, profile aggregation, and fallback display name rules.
+- it('inserts memorial and returns new id on success', async () => {
+- it('returns error when insert fails', async () => {
+- it('returns list of memorials for a user', async () => {
+- it('returns error when query fails', async () => {
+- it('fetches a single memorial by id', async () => {
+- it('returns error when memorial not found', async () => {
+- it('updates a memorial and returns success', async () => {
+- it('returns error when update fails', async () => {
+- it('appends a media URL to the existing array', async () => {
+- it('handles empty existing array', async () => {
+- it('returns error when fetch fails', async () => {
+- it('deletes a memorial and returns success', async () => {
+- it('returns error when delete fails', async () => {
+- it('upserts a plaque post and returns success', async () => {
+- it('defaults null description to null in DB', async () => {
+- it('returns error when upsert fails', async () => {
+- it('fetches a plaque post by id', async () => {
+- it('returns error when not found', async () => {
+- it('returns profile with display name and memorials', async () => {
+- it('falls back to first_name + last_name when display_name missing', async () => {
+- it('falls back to "User" when no name data available', async () => {
+- it('still returns success when profile row is missing', async () => {
+
+src/__tests__/services/qrService.test.js (5 tests)
+- Purpose: checks QR URL generation for memorials, ensuring correct formatting and domain usage.
+- it('returns a URL containing the memorial ID', () => {
+- it('returns a valid HTTPS URL', () => {
+- it('returns different URLs for different memorial IDs', () => {
+- it('includes the expected domain', () => {
+- it('constructs the full expected URL format', () => {
+
+src/__tests__/services/settingsService.test.js (12 tests)
+- Purpose: validates default settings, storage loading/fallback behavior, saving, and updates for both top-level and nested settings.
+- it('returns the correct default settings shape', () => {
+- it('includes qrAccess sub-object with expected keys', () => {
+- it('returns defaults when nothing is stored', async () => {
+- it('returns stored settings merged with defaults', async () => {
+- it('deep merges qrAccess with defaults', async () => {
+- it('returns defaults when stored JSON is invalid', async () => {
+- it('returns defaults when AsyncStorage.getItem throws', async () => {
+- it('serializes and stores settings successfully', async () => {
+- it('returns failure when AsyncStorage.setItem throws', async () => {
+- it('loads current settings, updates the key, and saves', async () => {
+- it('can update nested qrAccess as a whole value', async () => {
+- it('propagates save failure', async () => {
+
+src/__tests__/services/storageService.test.js (16 tests)
+- Purpose: tests file upload and deletion flows, including native and remote upload paths, MIME type handling, and error handling for storage operations.
+- it('returns error immediately', async () => {
+- it('reads file as base64 and uploads successfully', async () => {
+- it('falls back to copyAsync when readAsStringAsync fails on first try', async () => {
+- it('returns error when both read and copy fail', async () => {
+- it('returns error when supabase upload fails', async () => {
+- it('uses correct MIME type for video files', async () => {
+- it('uses correct MIME type for audio files', async () => {
+- it('uses octet-stream for unknown extension', async () => {
+- it('uses default folder "media" when folder not provided', async () => {
+- it('handles content:// URIs as native', async () => {
+- it('fetches blob and uploads successfully', async () => {
+- it('returns error when fetch responds with non-ok status', async () => {
+- it('returns error when fetch throws a network error', async () => {
+- it('returns the public URL for a storage path', () => {
+- it('removes the file and returns success', async () => {
+- it('returns error when remove fails', async () => {

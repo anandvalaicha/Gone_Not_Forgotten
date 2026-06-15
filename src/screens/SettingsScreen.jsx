@@ -1,3 +1,5 @@
+// UI screen for Settings
+
 import { useEffect, useState } from "react";
 import {
   View,

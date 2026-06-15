@@ -1,3 +1,5 @@
+// Service for qr.test operations
+
 jest.mock('react-native-qrcode-svg', () => 'QRCode');
 
 const { qrService } = require('../../services/qrService');

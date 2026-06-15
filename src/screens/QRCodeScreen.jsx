@@ -1,3 +1,5 @@
+// UI screen for QRCode
+
 import { useState, useEffect } from "react";
 import {
   View,

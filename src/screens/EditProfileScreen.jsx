@@ -1,3 +1,5 @@
+// UI screen for EditProfile
+
 import { useState, useRef } from "react";
 import {
   View,

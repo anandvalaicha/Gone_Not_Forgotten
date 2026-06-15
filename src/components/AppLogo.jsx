@@ -1,3 +1,5 @@
+// Reusable UI component
+
 import { Image } from "react-native";
 
 const logoSource = require("../../assets/logo.png");

@@ -1,3 +1,5 @@
+// UI screen for QRScanner
+
 import { useEffect, useState } from "react";
 import {
   View,
