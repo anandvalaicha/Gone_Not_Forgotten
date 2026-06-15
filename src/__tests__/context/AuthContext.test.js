@@ -1,3 +1,5 @@
+// Unit test for app functionality
+
 import React from 'react';
 import { renderHook, act } from '@testing-library/react-native';
 import { AuthContext, useSignOut, useOnPasswordReset } from '../../context/AuthContext';

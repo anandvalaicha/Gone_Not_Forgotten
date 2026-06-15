@@ -1,3 +1,5 @@
+// UI screen for SignUp
+
 import { useState, useRef } from "react";
 import {
   View,

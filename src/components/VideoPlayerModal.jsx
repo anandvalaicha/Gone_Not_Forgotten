@@ -1,3 +1,5 @@
+// Reusable UI component
+
 import { useEffect, useRef, useState, useCallback } from "react";
 import {
   View,

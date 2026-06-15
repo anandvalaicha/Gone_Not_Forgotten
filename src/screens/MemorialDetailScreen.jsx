@@ -1,3 +1,5 @@
+// UI screen for MemorialDetail
+
 import { useEffect, useRef, useState, useCallback } from "react";
 import {
   View,

@@ -1,3 +1,5 @@
+// Authentication and profile sync service
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase, isSupabaseConfigured, SUPABASE_URL } from '../config/supabase';
 

@@ -1,3 +1,5 @@
+// Service for settings.test operations
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 jest.mock('@react-native-async-storage/async-storage', () => ({
@@ -10,9 +12,16 @@ const { settingsService } = require('../../services/settingsService');
 const DEFAULT_KEY = 'gonenotforgotten-settings';
 
 const defaultSettings = {
-  notificationsEnabled: true,
+  // Privacy & Visibility
   publicProfileEnabled: false,
+  showLifeDates: true,
+  allowContributions: false,
+  // Notifications
+  notificationsEnabled: true,
+  anniversaryReminders: true,
+  visitorAlerts: true,
   dailySummaryEnabled: true,
+  // Plaque QR Access
   qrAccess: { profile: true, memories: true, gallery: true, audio: false },
 };
 

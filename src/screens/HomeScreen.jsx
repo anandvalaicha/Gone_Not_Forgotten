@@ -1,3 +1,5 @@
+// UI screen for Home
+
 import { useEffect, useCallback, useMemo, useRef, useState } from "react";
 import {
   View,

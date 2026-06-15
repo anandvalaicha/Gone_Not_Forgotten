@@ -1,3 +1,5 @@
+// File upload and storage helpers
+
 import { Platform } from 'react-native';
 import { supabase, isSupabaseConfigured, SUPABASE_URL, SUPABASE_ANON_KEY } from '../config/supabase';
 // expo-file-system v19 split the API. The legacy import still exposes the

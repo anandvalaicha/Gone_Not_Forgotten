@@ -1,3 +1,5 @@
+// UI screen for UserProfile
+
 import { useState, useEffect } from "react";
 import {
   View,

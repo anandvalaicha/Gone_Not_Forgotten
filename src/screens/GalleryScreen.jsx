@@ -1,3 +1,5 @@
+// UI screen for Gallery
+
 import { View, Text, StyleSheet } from "react-native";
 import { Colors } from "../theme/colors";
 import AppLogo from "../components/AppLogo";

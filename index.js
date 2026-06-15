@@ -1,3 +1,5 @@
+// Register Expo root component
+
 import 'react-native-url-polyfill/auto'; // required by @supabase/supabase-js
 
 import { registerRootComponent } from 'expo';

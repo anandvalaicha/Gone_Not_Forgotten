@@ -1,3 +1,5 @@
+// QR access and URL helpers
+
 import QRCode from 'react-native-qrcode-svg';
 
 export const qrService = {

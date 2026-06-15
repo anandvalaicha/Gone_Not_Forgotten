@@ -1,3 +1,5 @@
+// UI screen for ForgotPassword
+
 import { useState } from "react";
 import {
   View,

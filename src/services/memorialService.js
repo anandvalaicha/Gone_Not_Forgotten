@@ -1,3 +1,5 @@
+// Memorial and story data service
+
 import { supabase, isSupabaseConfigured } from '../config/supabase';
 
 export const memorialService = {
