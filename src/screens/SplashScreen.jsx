@@ -10,7 +10,6 @@ const { height } = Dimensions.get("window");
 
 // ─── TIMING (total ≈ 8.7 s) ──────────────────────────────────────────────────
 // 0.0 – 1.5 s  background fades in
-// 0.0 – 9.0 s  background slowly zooms in (Ken Burns)
 // 1.5 – 4.0 s  background holds alone (2.5 s pause)
 // 4.0 – 4.8 s  golden glow overlay + logo appear
 // 4.8 – 5.4 s  title slides up
@@ -20,7 +19,6 @@ const { height } = Dimensions.get("window");
 
 export default function SplashScreen({ onFinish }) {
   const bgOpacity = useRef(new Animated.Value(0)).current;
-  const bgScale = useRef(new Animated.Value(1.0)).current;
   const glowOpacity = useRef(new Animated.Value(0)).current;
   const glowPulse = useRef(new Animated.Value(0.55)).current;
   const logoOpacity = useRef(new Animated.Value(0)).current;
@@ -32,13 +30,6 @@ export default function SplashScreen({ onFinish }) {
   const screenOpacity = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    // Ken Burns zoom – runs in parallel with the whole sequence
-    Animated.timing(bgScale, {
-      toValue: 1.08,
-      duration: 9000,
-      useNativeDriver: true,
-    }).start();
-
     // Main cinematic sequence
     Animated.sequence([
       // Phase 1 – background fades in [0 → 1.5 s]
@@ -132,30 +123,18 @@ export default function SplashScreen({ onFinish }) {
     <Animated.View
       style={[StyleSheet.absoluteFill, { opacity: screenOpacity }]}
     >
-      {/* ── Background image with Ken Burns zoom ── */}
+      {/* ── Background gradient ── */}
       <Animated.View
-        style={[StyleSheet.absoluteFill, { transform: [{ scale: bgScale }] }]}
+        style={[StyleSheet.absoluteFill, { opacity: bgOpacity }]}
       >
-        <Animated.Image
-          source={require("../../assets/animation_background.png")}
-          style={[
-            StyleSheet.absoluteFill,
-            styles.bgImage,
-            { opacity: bgOpacity },
-          ]}
-          resizeMode="cover"
-          blurRadius={2}
+        <LinearGradient
+          colors={['#1a3d2e', '#2d6650', Colors.green700, '#2a4a3a']}
+          locations={[0, 0.35, 0.7, 1]}
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0.3, y: 0 }}
+          end={{ x: 0.7, y: 1 }}
         />
       </Animated.View>
-
-      {/* ── Dark scrim so text stays readable ── */}
-      <Animated.View
-        style={[
-          StyleSheet.absoluteFill,
-          styles.darkScrim,
-          { opacity: bgOpacity },
-        ]}
-      />
 
       {/* ── Warm golden glow (simulates sunset light brightening) ── */}
       <Animated.View
@@ -234,13 +213,6 @@ export default function SplashScreen({ onFinish }) {
 }
 
 const styles = StyleSheet.create({
-  bgImage: {
-    width: "100%",
-    height: "100%",
-  },
-  darkScrim: {
-    backgroundColor: "rgba(0,0,0,0.30)",
-  },
   content: {
     flex: 1,
     justifyContent: "center",
@@ -307,11 +279,5 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: height * 0.28,
-  },
-  // ── legacy styles kept for shape ──────────────────────────────────────────
-  subtitle: {
-    fontSize: 15,
-    color: Colors.ink700,
-    marginTop: 8,
   },
 });
